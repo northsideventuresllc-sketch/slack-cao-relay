@@ -157,7 +157,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
   };
 }
 
-/** The five CTO channels: #cto-bots plus the four private CTO channels (D1). */
+/** The five CAO channels: #cao-bots plus #cao-muse, #cao-claude, #cao-gemini, #cao-axon (D1). */
 export function ctoChannelIds(registry: Registry): Set<string> {
   return new Set([registry.ctoBotsChannelId, ...registry.ctos.map((c) => c.channelId)]);
 }

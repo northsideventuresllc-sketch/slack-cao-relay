@@ -119,9 +119,12 @@ test('templates: Appendix A word rule (a standalone em dash is not a word); rela
 
 test('config: placeholders block start; effective daily cap is the lower of the daily cap and the manual-minutes ceiling', () => {
   const r = loadRegistry();
-  assert.ok(placeholdersBlocking(r, 'muse').includes('muse.channelId'));
+  // AOS-P1-1f: the live registry now carries the five CAO channel ids, so no channel placeholder remains.
+  assert.ok(!placeholdersBlocking(r, 'muse').includes('muse.channelId'));
   assert.ok(!placeholdersBlocking(r, 'gemini').includes('gemini.agentName'), 'agent names set by COUNCIL GATE round 1');
-  assert.ok(placeholdersBlocking(r, 'gemini').includes('gemini.channelId'));
+  // A placeholder channel id still blocks start.
+  const withPlaceholder = { ...r, ctos: r.ctos.map((c) => (c.key === 'gemini' ? { ...c, channelId: '<CAO_GEMINI_CHANNEL_ID>' } : c)) };
+  assert.ok(placeholdersBlocking(withPlaceholder, 'gemini').includes('gemini.channelId'));
   assert.equal(placeholdersBlocking(testRegistry(), 'muse').length, 0);
   assert.equal(effectiveDailyCap(r.caps), 1);
 });

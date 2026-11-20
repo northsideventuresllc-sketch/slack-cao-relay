@@ -339,7 +339,7 @@ export class RelayProgram {
   private async postQueueEntry(e: PostQueueEntry, core: RelayCore, poster: Poster): Promise<void> {
     const reg = this.cfg.registry;
     if (e.kind === 'post') {
-      const target = e.channel === 'cto-bots' ? reg.ctoBotsChannelId : reg.ctos.find((c) => c.channelName === e.channel)?.channelId;
+      const target = (e.channel === 'cao-bots' || e.channel === 'cto-bots') ? reg.ctoBotsChannelId : reg.ctos.find((c) => c.channelName === e.channel)?.channelId;
       if (!target) return void this.log.warn('post-queue: unknown channel');
       await poster.post(target, e.text, 'cto-words');
       return;
