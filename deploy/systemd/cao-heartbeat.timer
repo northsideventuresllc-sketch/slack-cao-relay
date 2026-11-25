@@ -1,4 +1,4 @@
-# /etc/systemd/system/cto-heartbeat.timer — every 15 minutes (PLAN-v7 D4).
+# /etc/systemd/system/cao-heartbeat.timer — every 15 minutes (PLAN-v7 D4).
 [Unit]
 Description=Slack CAO Loop — Muse CAO heartbeat every 15 minutes
 

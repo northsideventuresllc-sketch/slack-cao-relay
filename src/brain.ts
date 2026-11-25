@@ -1,13 +1,19 @@
 // The brain (Supabase NI Brain, project uaztknnipdxxptrmlxlb) via PostgREST.
 // Tables touched — and ONLY these three (RUNBOOK Phase 1 deviation note):
 //   agent_comms     (existing; 15 verified columns — there is NO payload and NO updated_at column)
-//   cto_relay_lease (migration 0001)
-//   cto_heartbeat   (migration 0001)
+//   cao_relay_lease (migrations 0001 + 0002)
+//   cao_heartbeat   (migrations 0001 + 0002)
 // Key placement: the `apikey` header only (RUNBOOK Phase 1 key store: placement
 // custom_header:apikey; Bearer-only placement returned 401).
 
 import { fetch as undiciFetch, ProxyAgent, type Dispatcher } from 'undici';
 import { z } from 'zod';
+import { agentNameAliases } from './legacy.js';
+
+/** PostgREST to_agent filter matching the CAO name and its pre-cutover CTO spelling. */
+function agentFilter(agent: string): string {
+  return `in.(${agentNameAliases(agent).map((n) => encodeURIComponent(`"${n}"`)).join(',')})`;
+}
 
 // ---------------------------------------------------------------------------
 // Row shapes — real agent_comms columns, in the order recorded in RUNBOOK.md:
@@ -34,9 +40,9 @@ export const AGENT_COMMS_COLUMNS = [
 ] as const;
 
 /** `code` values the relay writes, so its rows are told apart from other agent mail. */
-export const CODE_FIRE = 'cto-relay-fire';
-export const CODE_ALERT = 'cto-relay-alert';
-export const HARNESS_RELAY = 'cto-relay';
+export const CODE_FIRE = 'cao-relay-fire';
+export const CODE_ALERT = 'cao-relay-alert';
+export const HARNESS_RELAY = 'cao-relay';
 export const CHANNEL_SLACK = 'slack';
 
 /** Brain-row statuses for a start (D4 manual state machine: who writes each). */
@@ -47,7 +53,7 @@ export const TERMINAL_ROW_STATUSES: ReadonlySet<string> = new Set(['closed', 'fa
 /** The relay's block inside agent_comms.evidence (jsonb). Ids, hashes, links and states only. */
 export const RelayEvidenceSchema = z.object({
   v: z.number().int().nonnegative(), // optimistic-concurrency version for read-modify-write
-  cto: z.string(),
+  cao: z.string(),
   task_hash: z.string(),
   norm_hash: z.string(),
   idem_key: z.string().optional(),
@@ -268,7 +274,7 @@ export class DirectBrain implements BrainApi {
     const st = statuses.map(encodeURIComponent).join(',');
     const { json } = await this.req(
       'GET',
-      `/agent_comms?select=*&code=eq.${CODE_FIRE}&to_agent=eq.${encodeURIComponent(toAgent)}&status=in.(${st})&order=created_at.asc&limit=500`,
+      `/agent_comms?select=*&code=eq.${CODE_FIRE}&to_agent=${agentFilter(toAgent)}&status=in.(${st})&order=created_at.asc&limit=500`,
     );
     return this.rows(json, FireRowSchema);
   }
@@ -276,7 +282,7 @@ export class DirectBrain implements BrainApi {
   async findFireRowByIdem(toAgent: string, idemKey: string): Promise<FireRow | null> {
     const { json } = await this.req(
       'GET',
-      `/agent_comms?select=*&code=eq.${CODE_FIRE}&to_agent=eq.${encodeURIComponent(toAgent)}&evidence->relay->>idem_key=eq.${encodeURIComponent(idemKey)}&limit=1`,
+      `/agent_comms?select=*&code=eq.${CODE_FIRE}&to_agent=${agentFilter(toAgent)}&evidence->relay->>idem_key=eq.${encodeURIComponent(idemKey)}&limit=1`,
     );
     return this.rows(json, FireRowSchema)[0] ?? null;
   }
@@ -296,7 +302,7 @@ export class DirectBrain implements BrainApi {
   async countStarts(sinceIso: string, toAgent?: string, untilIso?: string): Promise<number> {
     let q = `/agent_comms?select=id&code=eq.${CODE_FIRE}&fired_at=gte.${encodeURIComponent(sinceIso)}&status=not.in.(refused,cancelled)`;
     if (untilIso) q += `&fired_at=lt.${encodeURIComponent(untilIso)}`;
-    if (toAgent) q += `&to_agent=eq.${encodeURIComponent(toAgent)}`;
+    if (toAgent) q += `&to_agent=${agentFilter(toAgent)}`;
     const { headers } = await this.req('GET', q, undefined, 'count=exact', { Range: '0-0', 'Range-Unit': 'items' });
     const cr = headers.get('content-range') ?? '';
     const total = Number(cr.split('/')[1]);
@@ -324,19 +330,19 @@ export class DirectBrain implements BrainApi {
   }
 
   async getLease(name: string): Promise<LeaseRow | null> {
-    const { json } = await this.req('GET', `/cto_relay_lease?select=*&name=eq.${encodeURIComponent(name)}`);
+    const { json } = await this.req('GET', `/cao_relay_lease?select=*&name=eq.${encodeURIComponent(name)}`);
     return this.rows(json, LeaseRowSchema)[0] ?? null;
   }
 
   async insertLease(row: LeaseRow): Promise<LeaseRow | null> {
-    const { json } = await this.req('POST', '/cto_relay_lease?select=*', row, 'resolution=ignore-duplicates,return=representation');
+    const { json } = await this.req('POST', '/cao_relay_lease?select=*', row, 'resolution=ignore-duplicates,return=representation');
     return this.rows(json, LeaseRowSchema)[0] ?? null;
   }
 
   async casLease(name: string, expectEpoch: number, next: LeaseRow): Promise<LeaseRow | null> {
     const { json } = await this.req(
       'PATCH',
-      `/cto_relay_lease?select=*&name=eq.${encodeURIComponent(name)}&epoch=eq.${expectEpoch}`,
+      `/cao_relay_lease?select=*&name=eq.${encodeURIComponent(name)}&epoch=eq.${expectEpoch}`,
       { epoch: next.epoch, holder: next.holder, acquired_at: next.acquired_at, heartbeat_at: next.heartbeat_at, expires_at: next.expires_at },
       'return=representation',
     );
@@ -346,7 +352,7 @@ export class DirectBrain implements BrainApi {
   async renewLease(name: string, epoch: number, heartbeatAt: string, expiresAt: string): Promise<LeaseRow | null> {
     const { json } = await this.req(
       'PATCH',
-      `/cto_relay_lease?select=*&name=eq.${encodeURIComponent(name)}&epoch=eq.${epoch}`,
+      `/cao_relay_lease?select=*&name=eq.${encodeURIComponent(name)}&epoch=eq.${epoch}`,
       { heartbeat_at: heartbeatAt, expires_at: expiresAt },
       'return=representation',
     );
@@ -354,11 +360,11 @@ export class DirectBrain implements BrainApi {
   }
 
   async upsertHeartbeat(agent: string, at: string): Promise<void> {
-    await this.req('POST', '/cto_heartbeat?on_conflict=agent', { agent, heartbeat_at: at }, 'resolution=merge-duplicates,return=minimal');
+    await this.req('POST', '/cao_heartbeat?on_conflict=agent', { agent, heartbeat_at: at }, 'resolution=merge-duplicates,return=minimal');
   }
 
   async getHeartbeat(agent: string): Promise<HeartbeatRow | null> {
-    const { json } = await this.req('GET', `/cto_heartbeat?select=*&agent=eq.${encodeURIComponent(agent)}`);
+    const { json } = await this.req('GET', `/cao_heartbeat?select=*&agent=eq.${encodeURIComponent(agent)}`);
     return this.rows(json, HeartbeatRowSchema)[0] ?? null;
   }
 }

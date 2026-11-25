@@ -41,7 +41,7 @@ export class LeaseManager {
   constructor(
     private readonly brain: BrainApi,
     readonly name: string, // the CAO key: muse | claude | gemini | axon-hermes
-    readonly holder: string, // e.g. "vm:cto-relay-muse"
+    readonly holder: string, // e.g. "vm:cao-relay-muse"
     private readonly clock: Clock,
     private readonly log: Logger,
     private readonly onAlert: (code: string) => void,

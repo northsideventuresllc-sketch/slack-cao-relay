@@ -22,7 +22,7 @@
 // brain, so it refuses to start (D6 fail-closed) and its reconciler runs only
 // once the brain is back and the program starts. In the meantime the requester
 // sees no reply from that CAO's relay; if the Muse program is still running it
-// posts "<CAO> relay is down" in #cto-bots after 3 failed health polls. Loss
+// posts "<CAO> relay is down" in #cao-bots after 3 failed health polls. Loss
 // notices arrive when the program starts after the brain returns.
 // Reads the journal's fire-request records and the brain rows.
 //   - a journal record with no matching brain row is a lost held start → loss
@@ -58,7 +58,7 @@ export class Maintenance {
   async restore(): Promise<void> {
     const d = this.d;
     // 1–3: the journal is loaded and the queue rebuilt in journal order by the caller (FireBook.load).
-    const rows = await d.brain.listFireRows(d.cto.agentName, NON_TERMINAL_ROW_STATES);
+    const rows = await d.brain.listFireRows(d.cao.agentName, NON_TERMINAL_ROW_STATES);
     const rowById = new Map(rows.map((r) => [r.id, r]));
     for (const e of d.book.inFlight()) {
       if (e.provisional) continue; // held text was in memory only — the reconciler reports the loss
@@ -67,7 +67,7 @@ export class Maintenance {
       // 4: re-post a failed short reply from the brain row's task text.
       if (!e.replyPosted && row.body) {
         const safe = d.poster.safeTask(row.body);
-        const text = d.cto.adapter === 'automatic-muse' ? T.startedAutomatically(safe, e.id) : T.queuedForPerson(safe, e.id, d.cto);
+        const text = d.cao.adapter === 'automatic-muse' ? T.startedAutomatically(safe, e.id) : T.queuedForPerson(safe, e.id, d.cao);
         const r = await d.poster.post(e.channelId, text, 'template', e.id);
         if (r.ok) this.core.record({ kind: 'fire-state', fireId: e.id, hash: '', state: 'reply-posted' });
       }
@@ -118,7 +118,7 @@ export class Maintenance {
     // (b) brain rows with no journal entry (journal-failure orphans)
     let rows: FireRow[];
     try {
-      rows = await d.brain.listFireRows(d.cto.agentName, ['queued', 'claimed', 'started', 'linked']); // OPT-FU-2: `linked` too
+      rows = await d.brain.listFireRows(d.cao.agentName, ['queued', 'claimed', 'started', 'linked']); // OPT-FU-2: `linked` too
     } catch {
       return;
     }
@@ -190,7 +190,7 @@ export class Maintenance {
         }
         return;
       }
-      if (d.cto.adapter === 'automatic-muse') {
+      if (d.cao.adapter === 'automatic-muse') {
         if (!e.linkPosted && age >= MUSE_LINK_WINDOW_MS && !e.noticesSent.has('link-window')) {
           e.noticesSent.add('link-window');
           await d.poster.post(e.channelId, T.linkMissing(e.id), 'template', e.id);
@@ -215,7 +215,7 @@ export class Maintenance {
       lines.push(`${task ? d.poster.safeTask(task) : 'task text unavailable'} — fire id ${e.id}`);
       d.alert('manual-start-unclaimed-at-checkin', { fireId: e.id });
     }
-    if (lines.length > 0) await d.poster.post(d.cto.channelId, T.pending(lines), 'template');
+    if (lines.length > 0) await d.poster.post(d.cao.channelId, T.pending(lines), 'template');
   }
 }
 

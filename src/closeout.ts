@@ -2,7 +2,7 @@
 // 1. The CAO files a structured session log in the vault with a .sha256 sidecar.
 // 2. The relay reads the vault path back live, hashes the bytes, compares to the sidecar.
 // 3. Only on a match: the full map in the CAO's own channel, then a one-line
-//    pointer in #cto-bots tagging all four. The pointer is the sole link to the map.
+//    pointer in #cao-bots tagging all four. The pointer is the sole link to the map.
 // 5. No read-back → nothing claiming completion is posted; the map waits in the
 //    durable outbox (5 min × 12, hourly × 24, TTL 7 days) and Muse CAO is alerted.
 
@@ -167,23 +167,23 @@ export class Closeouts {
         }
         sessionLine = `${cur.sessionUrl} (filed in the log: ${cur.vaultLogPath})`;
       }
-      const map = T.map(doneLine, label, logUrl, sessionLine, stillOpen, d.registry.ctos);
-      const posted = await d.poster.post(d.cto.channelId, map, 'template', cur.fireId);
+      const map = T.map(doneLine, label, logUrl, sessionLine, stillOpen, d.registry.caos);
+      const posted = await d.poster.post(d.cao.channelId, map, 'template', cur.fireId);
       if (!posted.ok) {
         this.outbox.failAttempt(cur, d.clock());
         return false;
       }
       let permalink: string;
       try {
-        permalink = await d.poster.permalink(d.cto.channelId, posted.ts);
+        permalink = await d.poster.permalink(d.cao.channelId, posted.ts);
       } catch {
-        permalink = `https://${d.registry.workspace.domain}/archives/${d.cto.channelId}/p${posted.ts.replace('.', '')}`;
+        permalink = `https://${d.registry.workspace.domain}/archives/${d.cao.channelId}/p${posted.ts.replace('.', '')}`;
       }
       cur = { ...cur, step: 'pointer', logHash: rb.hash, mapTs: posted.ts, mapPermalink: permalink, done: doneLine, stillOpen };
       this.outbox.put(cur);
     }
     if (cur.step === 'pointer' && cur.mapPermalink && cur.done) {
-      const ptr = await d.poster.post(d.registry.ctoBotsChannelId, T.pointer(cur.done, cur.mapPermalink, d.registry.ctos), 'template', cur.fireId);
+      const ptr = await d.poster.post(d.registry.caoBotsChannelId, T.pointer(cur.done, cur.mapPermalink, d.registry.caos), 'template', cur.fireId);
       if (!ptr.ok) {
         this.outbox.failAttempt(cur, d.clock());
         return false;
@@ -198,11 +198,11 @@ export class Closeouts {
     const d = this.core.d;
     const closeoutKey = sha256(`${cur.fireId}|${cur.vaultLogPath}|${cur.logHash ?? ''}`);
     this.core.record({ kind: 'fire-state', fireId: cur.fireId, hash: '', state: 'closed', closeoutKey });
-    d.runlog.write({ kind: 'closeout', fireId: cur.fireId, writer: `adapter:${d.cto.key}`, state: 'closed' });
+    d.runlog.write({ kind: 'closeout', fireId: cur.fireId, writer: `adapter:${d.cao.key}`, state: 'closed' });
     const fire = d.book.get(cur.fireId);
     const started = fire?.startedAt ?? fire?.claimAt ?? fire?.acceptedAt ?? d.clock();
     const minutes = cur.minutes ?? Math.round((d.clock() - started) / 60_000);
-    d.runlog.cost(cur.fireId, fire?.taskHash ?? '', d.cto.home, cur.tokens, minutes);
+    d.runlog.cost(cur.fireId, fire?.taskHash ?? '', d.cao.home, cur.tokens, minutes);
     if (this.caps.isOverrun(cur.tokens)) {
       this.core.record({ kind: 'fire-state', fireId: cur.fireId, hash: '', state: 'overrun', reason: 'token-budget' });
       d.alert('run-over-token-budget', { fireId: cur.fireId, tokens: cur.tokens });

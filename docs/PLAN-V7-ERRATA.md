@@ -99,7 +99,7 @@ Items the build fixed in code are listed in the PR body, not here, except where 
 
   > filed into the vault within a day by the relay host's nightly job; Muse CAO's weekly job is the mirror check.
 
-  (Done in `deploy/scripts/cto-relay-offhost-copy.sh`.)
+  (Done in `deploy/scripts/cao-relay-offhost-copy.sh`.)
 - **R7-FU-12.** D6 store table: replace "then archived to the vault" with:
 
   > then archived to the vault at `$VAULT_ARCHIVE_PATH` as `brain-archive-<YYYY-MM>.jsonl` (JSON lines, one row per line), filed nightly; the retrieval test includes the archive.

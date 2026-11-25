@@ -2,7 +2,7 @@
 
 The Slack CAO Loop relay: four small programs, one per CAO (Muse, Claude,
 Gemini, AXON-Hermes). They carry Slack messages between the CAOs, start CAO
-work from `/fire-<cto>` commands and `@<CAO> fire: <task>` mentions, and post
+work from `/fire-<cao>` commands and `@<CAO> fire: <task>` mentions, and post
 the close-out map (Done / Log / Session / Still open) when a run finishes.
 
 Spec: PLAN-v7.md (approved, GO 91.35%). Live facts: RUNBOOK.md (wins where the
@@ -18,12 +18,12 @@ No secret is ever stored in this repo. Code asks for one secret for one job at r
 
 ## Status
 
-- Phase 2, Step 1: brain migration — `supabase/migrations/0001_cto_relay_tables.sql`
-  creates `cto_relay_lease` and `cto_heartbeat` in NI Brain
+- Phase 2, Step 1: brain migration — `supabase/migrations/0001_cto_relay_tables.sql` (historical name; renamed by `0002_cao_rename.sql`)
+  creates `cao_relay_lease` and `cao_heartbeat` in NI Brain
   (project `uaztknnipdxxptrmlxlb`, public schema). Run by hand in the Supabase
   SQL editor. `agent_comms` already exists and is not changed.
 - Phase 2, Steps 2–4 (relay code, systemd units, relay runbook): branch
-  `phase-2/cto-relay`, merged only through COUNCIL GATE at 95%+.
+  `phase-2/cao-relay`, merged only through COUNCIL GATE at 95%+.
 
 ## Layout
 
@@ -32,8 +32,8 @@ No secret is ever stored in this repo. Code asks for one secret for one job at r
 | `src/` | The relay (TypeScript strict + Zod). `contracts.ts` holds the PLAN-v7 Contracts. |
 | `config/registry.json` | CAO registry: the single source for which adapter serves which CAO. |
 | `config/blocklist.json` | Post blocklist (canonical copy in the runbook). |
-| `supabase/migrations/` | Brain migration (`cto_relay_lease`, `cto_heartbeat`). |
-| `deploy/systemd/` | The four relay units, `cto-heartbeat`, and the off-host copy timer. |
+| `supabase/migrations/` | Brain migration (`cao_relay_lease`, `cao_heartbeat`). |
+| `deploy/systemd/` | The four relay units, `cao-heartbeat`, and the off-host copy timer. |
 | `deploy/scripts/` | Key fetch hook, deploy, mini sync, off-host copy, mini poller and run wrappers. |
 | `docs/RELAY-RUNBOOK.md` | Deploy, operate, fail over, rebuild. |
 | `docs/PLAN-V7-ERRATA.md` | Round-7 plan-text fixes (VERDICT-r7) for Muse CAO to apply to PLAN-v7.md. |

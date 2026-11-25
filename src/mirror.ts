@@ -3,7 +3,7 @@
 // Sole mirror writer: the Muse relay program. Entries pass through the same
 // blocklist + redactor as posts.
 // R7-FU-11 — filing: the relay host files the mirror into the vault WITHIN A DAY.
-// The nightly cto-relay-offhost-copy.sh (root, 02:30) copies this directory to
+// The nightly cao-relay-offhost-copy.sh (root, 02:30) copies this directory to
 // $VAULT_MIRROR_PATH in the vault checkout and commits + pushes it. Muse CAO's
 // weekly job is the mirror CHECK (thread links + a secrets sample), not the filing.
 // A night whose filing fails raises the off-host hygiene alert.
@@ -17,11 +17,11 @@ import { iso, startOfLocalWeek, zonedParts, type Clock } from './util/time.js';
 
 export type MirrorKind = 'fire' | 'closeout' | 'blocker' | 'decision';
 
-export function classifyForMirror(text: string, inCtoBots: boolean): MirrorKind | null {
+export function classifyForMirror(text: string, inCaoBots: boolean): MirrorKind | null {
   if (text.startsWith('Started:')) return 'fire';
   if (text.startsWith('Close-out:')) return 'closeout';
-  if (inCtoBots && /\bBlocked\b/.test(text)) return 'blocker';
-  if (inCtoBots && /\b(need your call|decision|decided)\b/i.test(text)) return 'decision';
+  if (inCaoBots && /\bBlocked\b/.test(text)) return 'blocker';
+  if (inCaoBots && /\b(need your call|decision|decided)\b/i.test(text)) return 'decision';
   return null;
 }
 
@@ -39,19 +39,19 @@ export class MirrorWriter {
     const p = zonedParts(startOfLocalWeek(ms, this.tz), this.tz);
     const mm = String(p.month).padStart(2, '0');
     const dd = String(p.day).padStart(2, '0');
-    return join(this.dir, `cto-loop-mirror-${p.year}-${mm}-${dd}.md`);
+    return join(this.dir, `cao-loop-mirror-${p.year}-${mm}-${dd}.md`);
   }
 
   observe(ev: SlackEvent): MirrorKind | null {
-    const cto = this.registry.ctos.find((c) => c.botUserId === ev.authorId);
-    if (!cto) return null;
-    const inCtoBots = ev.channelId === this.registry.ctoBotsChannelId;
-    const kind = classifyForMirror(ev.text, inCtoBots);
+    const cao = this.registry.caos.find((c) => c.botUserId === ev.authorId);
+    if (!cao) return null;
+    const inCaoBots = ev.channelId === this.registry.caoBotsChannelId;
+    const kind = classifyForMirror(ev.text, inCaoBots);
     if (!kind) return null;
     const summary = this.blocklist.snippet(ev.text.split('\n')[0] ?? '', 120).replace(/\|/g, '/');
     const link = `https://${this.registry.workspace.domain}/archives/${ev.channelId}/p${ev.timestamp.replace('.', '')}`;
     const now = this.clock();
-    appendLineSync(this.fileFor(now), `- ${iso(now)} | ${kind} | ${cto.displayName} | ${summary} | ${link}`, 0o640);
+    appendLineSync(this.fileFor(now), `- ${iso(now)} | ${kind} | ${cao.displayName} | ${summary} | ${link}`, 0o640);
     return kind;
   }
 }

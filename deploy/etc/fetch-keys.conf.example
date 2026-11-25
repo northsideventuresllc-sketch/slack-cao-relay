@@ -1,8 +1,8 @@
-# /etc/cto-relay/fetch-keys.conf  (root:root 0600) — LABELS ONLY, never values.
+# /etc/cao-relay/fetch-keys.conf  (root:root 0600) — LABELS ONLY, never values.
 #
 # VAULT_GET: the command that takes one argument (a Secure Vault label), reads
 # the vault-cli-machine token from the file named in $VAULT_TOKEN_FILE
-# (/etc/cto-relay/vault-token), and prints ONLY the secret value on stdout.
+# (/etc/cao-relay/vault-token), and prints ONLY the secret value on stdout.
 # TO RECORD — the concrete command string is not recorded in PLAN-v7, the
 # setup RUNBOOK, or this repo, and no Secure Vault CLI exists in the workspace to
 # verify one against. Do not guess it. Procedure: runbook §2.3. The fetch hook
@@ -11,7 +11,7 @@ VAULT_GET="<VAULT_GET_COMMAND>"
 
 # Secure Vault labels (C2-FU-4). These are the labels each key is STORED UNDER
 # (runbook §2.4 says where each value comes from in Slack). The brain key label
-# cto-relay-muse is from PLAN-v7 D4/D7.
+# Labels keep their original cto-relay-* names on purpose: they name live secrets in the safe; renaming a secret follows rules 20.8 and is a separate JB-approved change.
 LABEL_MUSE_BRAIN_KEY="cto-relay-muse"
 LABEL_MUSE_SLACK_APP_TOKEN="cto-relay-muse-slack-app"
 LABEL_MUSE_SLACK_BOT_TOKEN="cto-relay-muse-slack-bot"

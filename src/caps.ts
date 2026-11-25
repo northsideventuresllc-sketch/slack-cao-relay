@@ -4,11 +4,11 @@
 // per-CAO weekly cap for manual CAOs and the overrun block. The lower binds.
 
 import type { BrainApi } from './brain.js';
-import { effectiveDailyCap, type Caps, type CtoEntry } from './config.js';
+import { effectiveDailyCap, type Caps, type CaoEntry } from './config.js';
 import type { Journal } from './journal.js';
 import { iso, startOfLocalDay, startOfLocalMonth, startOfLocalWeek } from './util/time.js';
 
-export type CapVerdict = { kind: 'ok' } | { kind: 'refused'; cap: 'daily' | 'monthly' | 'weekly-per-cto' | 'overrun'; reply: string };
+export type CapVerdict = { kind: 'ok' } | { kind: 'refused'; cap: 'daily' | 'monthly' | 'weekly-per-cao' | 'overrun'; reply: string };
 
 export const REPLY_CAP_DAILY = 'Not started. The daily start limit is reached. It resets at midnight.';
 export const REPLY_CAP_MONTHLY = 'Not started. The monthly start limit is reached.';
@@ -18,7 +18,7 @@ export const REPLY_OVERRUN = 'Not started. The last run went over its token budg
 export class CostEnvelope {
   constructor(
     private readonly caps: Caps,
-    private readonly cto: CtoEntry,
+    private readonly cao: CaoEntry,
     private readonly journal: Journal,
     private readonly tz: string,
   ) {}
@@ -40,9 +40,9 @@ export class CostEnvelope {
     if (day >= effectiveDailyCap(this.caps)) return { kind: 'refused', cap: 'daily', reply: REPLY_CAP_DAILY };
     const month = await brain.countStarts(iso(startOfLocalMonth(nowMs, this.tz)));
     if (month >= this.caps.monthlyStartCapTotal) return { kind: 'refused', cap: 'monthly', reply: REPLY_CAP_MONTHLY };
-    if (this.cto.adapter === 'manual') {
-      const week = await brain.countStarts(iso(startOfLocalWeek(nowMs, this.tz)), this.cto.agentName);
-      if (week >= this.caps.perCtoWeeklyManualCap) return { kind: 'refused', cap: 'weekly-per-cto', reply: REPLY_CAP_WEEKLY };
+    if (this.cao.adapter === 'manual') {
+      const week = await brain.countStarts(iso(startOfLocalWeek(nowMs, this.tz)), this.cao.agentName);
+      if (week >= this.caps.perCaoWeeklyManualCap) return { kind: 'refused', cap: 'weekly-per-cao', reply: REPLY_CAP_WEEKLY };
     }
     return { kind: 'ok' };
   }

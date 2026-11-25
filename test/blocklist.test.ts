@@ -24,13 +24,13 @@ test('emails, ID numbers and money amounts are caught; coordination text is not'
 });
 
 test('post-queue strip removes mention + fire: + task words (plain names and real mentions)', () => {
-  const claude = reg.ctos.find((c) => c.key === 'claude')!;
-  assert.equal(stripStartPattern('hello @Claude CAO fire: deploy now', reg.ctos), 'hello');
-  assert.equal(stripStartPattern(`ok <@${claude.botUserId}> fire: deploy\nnext line`, reg.ctos), 'ok\nnext line');
-  assert.ok(!containsStartPattern(stripStartPattern(`<@${claude.botUserId}> FIRE: x`, reg.ctos), reg.ctos));
+  const claude = reg.caos.find((c) => c.key === 'claude')!;
+  assert.equal(stripStartPattern('hello @Claude CAO fire: deploy now', reg.caos), 'hello');
+  assert.equal(stripStartPattern(`ok <@${claude.botUserId}> fire: deploy\nnext line`, reg.caos), 'ok\nnext line');
+  assert.ok(!containsStartPattern(stripStartPattern(`<@${claude.botUserId}> FIRE: x`, reg.caos), reg.caos));
 });
 
 test('plain names become real mentions (AXON-Hermes CAO wins over shorter names)', () => {
-  const ax = reg.ctos.find((c) => c.key === 'axon-hermes')!;
-  assert.equal(toRealMentions('@AXON-Hermes CAO please', reg.ctos), `<@${ax.botUserId}> please`);
+  const ax = reg.caos.find((c) => c.key === 'axon-hermes')!;
+  assert.equal(toRealMentions('@AXON-Hermes CAO please', reg.caos), `<@${ax.botUserId}> please`);
 });

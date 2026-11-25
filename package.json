@@ -8,14 +8,14 @@
     "node": ">=22"
   },
   "bin": {
-    "cto-relay": "dist/index.js"
+    "cao-relay": "dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "lint:secrets": "bash scripts/check-no-secrets.sh",
-    "lint:shell": "shellcheck -S warning deploy/scripts/*.sh deploy/scripts/cto-relay-fetch-keys scripts/*.sh",
+    "lint:shell": "shellcheck -S warning deploy/scripts/*.sh deploy/scripts/cao-relay-fetch-keys scripts/*.sh",
     "check": "npm run typecheck && npm test && npm run lint:secrets"
   },
   "dependencies": {

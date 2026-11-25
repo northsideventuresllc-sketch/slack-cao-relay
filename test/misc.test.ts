@@ -96,16 +96,16 @@ test('post-queue: whole lines only, offset survives restart, rotation by rename 
   const clock = new FakeClock();
   const seen: PostQueueEntry[] = [];
   const w = new PostQueueWatcher(path, dir, clock.now, async (e) => void seen.push(e), () => undefined);
-  appendPostQueue(path, { kind: 'post', channel: 'cto-bots', text: 'hello' });
+  appendPostQueue(path, { kind: 'post', channel: 'cao-bots', text: 'hello' });
   writeFileSync(path, readFileSync(path, 'utf8') + '{"kind":"post","chan', 'utf8'); // partial line
   await w.poll();
   assert.equal(seen.length, 1);
-  writeFileSync(path, readFileSync(path, 'utf8') + 'nel":"cto-bots","text":"second"}\n', 'utf8');
+  writeFileSync(path, readFileSync(path, 'utf8') + 'nel":"cao-bots","text":"second"}\n', 'utf8');
   const w2 = new PostQueueWatcher(path, dir, clock.now, async (e) => void seen.push(e), () => undefined);
   await w2.poll();
   assert.deepEqual(seen.map((e) => (e.kind === 'post' ? e.text : '')), ['hello', 'second']);
   clock.advance(8 * DAY);
-  appendPostQueue(path, { kind: 'fire', cto: 'claude', task: 'build it' });
+  appendPostQueue(path, { kind: 'fire', cao: 'claude', task: 'build it' });
   await w2.poll();
   assert.equal(seen.length, 3);
   assert.equal(readFileSync(path, 'utf8'), '', 'new file after weekly rotation');
@@ -119,9 +119,13 @@ test('templates: Appendix A word rule (a standalone em dash is not a word); rela
 
 test('config: placeholders block start; effective daily cap is the lower of the daily cap and the manual-minutes ceiling', () => {
   const r = loadRegistry();
-  assert.ok(placeholdersBlocking(r, 'muse').includes('muse.channelId'));
-  assert.ok(!placeholdersBlocking(r, 'gemini').includes('gemini.agentName'), 'agent names set by COUNCIL GATE round 1');
-  assert.ok(placeholdersBlocking(r, 'gemini').includes('gemini.channelId'));
+  // Channel ids are filled from the live workspace (2026-11-25): the shipped registry has no placeholder left.
+  assert.equal(placeholdersBlocking(r, 'muse').length, 0);
+  const unset = structuredClone(r);
+  for (const c of unset.caos) c.channelId = `<CAO_${c.key.toUpperCase().replace('-', '_')}_CHANNEL_ID>`;
+  assert.ok(placeholdersBlocking(unset, 'muse').includes('muse.channelId'));
+  assert.ok(!placeholdersBlocking(unset, 'gemini').includes('gemini.agentName'), 'agent names set by COUNCIL GATE round 1');
+  assert.ok(placeholdersBlocking(unset, 'gemini').includes('gemini.channelId'));
   assert.equal(placeholdersBlocking(testRegistry(), 'muse').length, 0);
   assert.equal(effectiveDailyCap(r.caps), 1);
 });
@@ -143,14 +147,14 @@ test('broker: a manual program reaches only its own rows and its own lease name'
   const reg = testRegistry();
   const runDir = mkdtempSync(join(tmpdir(), 'run-'));
   const server = new BrokerServer(brain, runDir, silentLogger);
-  server.start(reg.ctos.filter((c) => c.adapter === 'manual'));
+  server.start(reg.caos.filter((c) => c.adapter === 'manual'));
   await new Promise((r) => setTimeout(r, 50));
   const claude = new BrokeredBrain(brokerSocketPath(runDir, 'claude'));
   await claude.ping();
-  const ev = { v: 0, cto: 'claude', task_hash: 'h', norm_hash: 'n', epoch: 1 };
+  const ev = { v: 0, cao: 'claude', task_hash: 'h', norm_hash: 'n', epoch: 1 };
   const row = await claude.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', evidence: ev, firedAt: new Date().toISOString() });
   assert.equal((await claude.getFireRow(row.id))?.id, row.id);
-  await assert.rejects(claude.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'b', evidence: { ...ev, cto: 'muse' }, firedAt: '' }));
+  await assert.rejects(claude.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'b', evidence: { ...ev, cao: 'muse' }, firedAt: '' }));
   await assert.rejects(claude.getLease('muse'));
   const gemini = new BrokeredBrain(brokerSocketPath(runDir, 'gemini'));
   assert.equal(await gemini.getFireRow(row.id), null, 'another CAO cannot read the row');
@@ -163,7 +167,7 @@ test('brain rows: terminal rows older than 90 days are exported to the vault arc
   const clock = new FakeClock();
   const brain = new FakeBrain(clock);
   const reg = testRegistry();
-  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'task text', evidence: { v: 0, cto: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
+  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'task text', evidence: { v: 0, cao: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
   brain.rows.get(row.id)!.status = 'closed';
   brain.rows.get(row.id)!.completed_at = new Date(clock.now()).toISOString();
   clock.advance(91 * DAY);

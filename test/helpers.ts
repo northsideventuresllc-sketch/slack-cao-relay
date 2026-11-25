@@ -17,7 +17,7 @@ import {
 import { Blocklist } from '../src/blocklist.js';
 import { Breaker } from '../src/breaker.js';
 import { CostEnvelope } from '../src/caps.js';
-import { loadRegistry, ctoEntry, type CtoKey, type Registry } from '../src/config.js';
+import { loadRegistry, caoEntry, type CaoKey, type Registry } from '../src/config.js';
 import { RelayCore } from '../src/core.js';
 import { Dedup } from '../src/dedup.js';
 import { FireBook } from '../src/firebook.js';
@@ -37,7 +37,7 @@ export function testRegistry(): Registry {
   const r = loadRegistry();
   const ids: Record<string, string> = { muse: 'CMUSE0001', claude: 'CCLAUDE01', gemini: 'CGEMINI01', 'axon-hermes': 'CAXON0001' };
   const agents: Record<string, string> = { muse: 'MUSE', claude: 'Claude CAO', gemini: 'Gemini CAO', 'axon-hermes': 'AXON-Hermes CAO' };
-  return { ...r, ctos: r.ctos.map((c) => ({ ...c, channelId: ids[c.key] ?? c.channelId, agentName: agents[c.key] ?? c.agentName })) };
+  return { ...r, caos: r.caos.map((c) => ({ ...c, channelId: ids[c.key] ?? c.channelId, agentName: agents[c.key] ?? c.agentName })) };
 }
 
 export class FakeClock {
@@ -75,7 +75,7 @@ export class FakeBrain implements BrainApi {
       id,
       created_at: new Date(this.clock.now()).toISOString(),
       from_agent: row.fromAgent,
-      from_harness: 'cto-relay',
+      from_harness: 'cao-relay',
       to_agent: row.toAgent,
       to_harness: row.toHarness,
       channel: 'slack',
@@ -86,7 +86,7 @@ export class FakeBrain implements BrainApi {
       completed_at: null,
       evidence: { relay: row.evidence },
       parent_id: null,
-      code: 'cto-relay-fire',
+      code: 'cao-relay-fire',
     };
     this.rows.set(id, r);
     this.insertOrder.push(id);
@@ -195,16 +195,16 @@ export interface Harness {
   advance(ms: number): Promise<void>;
 }
 
-export async function makeHarness(ctoKey: CtoKey = 'muse', opts: { dir?: string; clock?: FakeClock; brain?: FakeBrain } = {}): Promise<Harness> {
-  const dir = opts.dir ?? mkdtempSync(join(tmpdir(), 'cto-relay-test-'));
+export async function makeHarness(caoKey: CaoKey = 'muse', opts: { dir?: string; clock?: FakeClock; brain?: FakeBrain } = {}): Promise<Harness> {
+  const dir = opts.dir ?? mkdtempSync(join(tmpdir(), 'cao-relay-test-'));
   const clock = opts.clock ?? new FakeClock();
   const brain = opts.brain ?? new FakeBrain(clock);
   const registry = testRegistry();
-  const cto = ctoEntry(registry, ctoKey);
+  const cao = caoEntry(registry, caoKey);
   const sender = new FakeSender();
   const alerts: string[] = [];
   const alert = (code: string): void => void alerts.push(code);
-  const lease = new LeaseManager(brain, cto.key, `vm:cto-relay-${cto.key}`, clock.now, silentLogger, alert);
+  const lease = new LeaseManager(brain, cao.key, `vm:cao-relay-${cao.key}`, clock.now, silentLogger, alert);
   await lease.acquire();
   const journal = new Journal(join(dir, 'journal.jsonl'), clock.now);
   journal.load();
@@ -215,23 +215,23 @@ export async function makeHarness(ctoKey: CtoKey = 'muse', opts: { dir?: string;
     return e && e.terminal ? e.state : null;
   });
   dedup.loadFromJournal(journal.all());
-  const runlog = new RunLog(dir, cto.key, clock.now);
+  const runlog = new RunLog(dir, cao.key, clock.now);
   const blocklist = Blocklist.fromFile(join(REPO_ROOT, 'config', 'blocklist.json'));
-  const poster = new Poster(sender, lease, blocklist, registry.ctos, runlog, silentLogger, alert, undefined, async () => undefined);
+  const poster = new Poster(sender, lease, blocklist, registry.caos, runlog, silentLogger, alert, undefined, async () => undefined);
   const scheduled: Array<() => void> = [];
   const core = new RelayCore({
-    cto,
+    cao,
     registry,
     timezone: 'America/New_York',
     clock: clock.now,
     log: process.env.TEST_LOG ? createLogger('test', 'debug') : silentLogger,
     brain,
-    adapter: makeAdapter(brain, cto, clock.now),
+    adapter: makeAdapter(brain, cao, clock.now),
     journal,
     book,
     dedup,
-    breaker: new Breaker(journal, cto.key),
-    caps: new CostEnvelope({ ...registry.caps, dailyStartCapTotal: 100, monthlyStartCapTotal: 100 }, cto, journal, 'America/New_York'),
+    breaker: new Breaker(journal, cao.key),
+    caps: new CostEnvelope({ ...registry.caps, dailyStartCapTotal: 100, monthlyStartCapTotal: 100 }, cao, journal, 'America/New_York'),
     quarantine: new Quarantine(dir, clock.now),
     runlog,
     poster,
@@ -255,9 +255,9 @@ export async function makeHarness(ctoKey: CtoKey = 'muse', opts: { dir?: string;
 }
 
 let evN = 0;
-export function mention(h: Harness, target: CtoKey, text: string, opts: Partial<SlackEvent> = {}): SlackEvent {
-  const me = ctoEntry(h.registry, target);
-  const author = ctoEntry(h.registry, 'muse');
+export function mention(h: Harness, target: CaoKey, text: string, opts: Partial<SlackEvent> = {}): SlackEvent {
+  const me = caoEntry(h.registry, target);
+  const author = caoEntry(h.registry, 'muse');
   return {
     eventId: `Ev${++evN}`,
     channelId: me.channelId,

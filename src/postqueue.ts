@@ -5,15 +5,15 @@
 // events feed only abort parsing; the Muse program's `message` events also feed
 // the mirror writer. The v2 route is a brain post-queue table (D2).
 //
-// The Muse post-queue (D2): `/var/lib/cto-relay/muse/post-queue.jsonl`, owner
-// cto-relay-muse, mode 0600, newline-delimited JSON appended with O_APPEND and
+// The Muse post-queue (D2): `/var/lib/cao-relay/muse/post-queue.jsonl`, owner
+// cao-relay-muse, mode 0600, newline-delimited JSON appended with O_APPEND and
 // fsynced per line. Weekly rotation, 7-day retention, 10MB cap — rotated by the
 // Muse relay program (rename + create new), never truncated in place.
 //
 // Entry kinds:
-//   {"kind":"post","channel":"cto-bots"|"cto-muse"|…,"text":"…"} — Muse CAO's own words:
+//   {"kind":"post","channel":"cao-bots"|"cao-muse"|…,"text":"…"} — Muse CAO's own words:
 //       an ordinary post; the poster strips the start pattern; it can never start work.
-//   {"kind":"fire","cto":"muse"|"claude"|"gemini"|"axon-hermes","task":"…"} — JB's start,
+//   {"kind":"fire","cao":"muse"|"claude"|"gemini"|"axon-hermes","task":"…"} — JB's start,
 //       relayed by Muse CAO (D4: "Muse CAO relays the start into Slack as the Muse CAO bot").
 //       For muse: fed to this program's own fire parser path. For another CAO: posted as
 //       the explicit start pattern in that CAO's channel, so ONLY that CAO's program parses
@@ -22,7 +22,7 @@
 import { closeSync, existsSync, openSync, readSync, renameSync, statSync, unlinkSync, readdirSync, constants, fstatSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { z } from 'zod';
-import { CTO_KEYS } from './config.js';
+import { CAO_KEYS } from './config.js';
 import { appendLineSync, writeFileAtomicSync } from './util/durable.js';
 import { DAY, iso, type Clock } from './util/time.js';
 
@@ -32,14 +32,14 @@ export const POST_QUEUE_RETENTION_MS = 7 * DAY;
 
 export const PostQueueEntrySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('post'), channel: z.string().min(1).max(40), text: z.string().min(1).max(4000) }),
-  z.object({ kind: z.literal('fire'), cto: z.enum(CTO_KEYS), task: z.string().min(1).max(280) }),
+  z.object({ kind: z.literal('fire'), cao: z.enum(CAO_KEYS), task: z.string().min(1).max(280) }),
 ]);
 export type PostQueueEntry = z.infer<typeof PostQueueEntrySchema>;
 
 const OffsetSchema = z.object({ file: z.string(), ino: z.number(), offset: z.number().int().nonnegative(), createdAt: z.string() });
 
 /**
- * Append helper for Muse CAO's writer (run as cto-relay-muse). R7-FU-6: it
+ * Append helper for Muse CAO's writer (run as cao-relay-muse). R7-FU-6: it
  * opens the file by path on EVERY write (O_APPEND|O_CREAT, then close), so a
  * write after the program's rename lands in the new file; it retries once on
  * ENOENT (directory briefly missing). A write that opened just before the rename

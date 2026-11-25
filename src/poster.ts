@@ -9,7 +9,7 @@
 
 import type { Blocklist } from './blocklist.js';
 import { containsStartPattern, stripStartPattern, toRealMentions } from './blocklist.js';
-import type { CtoEntry } from './config.js';
+import type { CaoEntry } from './config.js';
 import type { LeaseManager } from './lease.js';
 import type { RunLog } from './runlog.js';
 import { withBackoff, type Sleep, realSleep } from './util/backoff.js';
@@ -21,7 +21,7 @@ export interface SlackSender {
   permalink(channel: string, ts: string): Promise<string>;
 }
 
-export type PostKind = 'template' | 'cto-words';
+export type PostKind = 'template' | 'cao-words';
 
 /** Reuse a live lease confirmation this recent instead of reading again (keeps the short reply inside 3 s). */
 export const LIVE_FENCE_REUSE_MS = 2000;
@@ -39,11 +39,11 @@ export class Poster {
     private readonly sender: SlackSender,
     private readonly lease: LeaseManager,
     private readonly blocklist: Blocklist,
-    private readonly ctos: CtoEntry[],
+    private readonly caos: CaoEntry[],
     private readonly runlog: RunLog,
     private readonly log: Logger,
     private readonly onAlert: (code: string, ids?: Record<string, string | number | null>) => void,
-    private readonly onCtoWords?: (channelId: string, ts: string) => void,
+    private readonly onCaoWords?: (channelId: string, ts: string) => void,
     sleep?: Sleep,
   ) {
     this.sleep = sleep ?? realSleep;
@@ -55,7 +55,7 @@ export class Poster {
    */
   safeTask(task: string): string {
     let t = this.blocklist.redact(task);
-    for (const c of this.ctos) {
+    for (const c of this.caos) {
       t = t.replace(new RegExp(`<@${c.botUserId}(?:\\|[^>]*)?>`, 'g'), c.displayName);
       t = t.split(`@${c.displayName}`).join(c.displayName);
     }
@@ -93,8 +93,8 @@ export class Poster {
       return { ok: false, reason: 'stale-epoch' };
     }
     let out = text;
-    if (kind === 'cto-words') {
-      out = stripStartPattern(toRealMentions(text, this.ctos), this.ctos);
+    if (kind === 'cao-words') {
+      out = stripStartPattern(toRealMentions(text, this.caos), this.caos);
       const hits = this.blocklist.check(out);
       if (hits.length > 0) {
         this.log.warn('post blocked by blocklist', { fireId, channelId, rules: hits.map((h) => `${h.rule}#${h.index}`).join(','), textHash: sha256(text) });
@@ -103,16 +103,16 @@ export class Poster {
         this.onAlert('post-blocked', { fireId, textHash: sha256(text) });
         return { ok: false, reason: 'blocked' };
       }
-    } else if (containsStartPattern(out, this.ctos)) {
+    } else if (containsStartPattern(out, this.caos)) {
       // Must never happen: relay templates never carry the start pattern. Strip, and say so loudly.
       this.log.error('template carried the start pattern; stripped', { fireId });
-      out = stripStartPattern(out, this.ctos);
+      out = stripStartPattern(out, this.caos);
     }
     if (out.trim().length === 0) return { ok: false, reason: 'empty' };
     try {
       const ts = await withBackoff(() => this.sender.postWithTs(channelId, out), this.sleep);
       this.runlog.write({ kind: 'post', fireId, channelId, ts, result: 'posted', writer: 'relay' });
-      if (kind === 'cto-words') this.onCtoWords?.(channelId, ts);
+      if (kind === 'cao-words') this.onCaoWords?.(channelId, ts);
       return { ok: true, ts };
     } catch (err) {
       const code = errorCode(err);

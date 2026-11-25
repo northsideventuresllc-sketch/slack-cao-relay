@@ -9,7 +9,7 @@ import type { LeaseSnapshot } from './lease.js';
 import type { Metrics } from './metrics.js';
 
 export interface HealthSource {
-  cto: string;
+  cao: string;
   metrics: Metrics;
   queueDepth: () => number;
   lease: () => LeaseSnapshot;
@@ -19,7 +19,7 @@ export interface HealthSource {
 }
 
 export interface FullHealth extends HealthResponse {
-  cto: string;
+  cao: string;
   ok: boolean;
   queueDepth: number;
   lease: LeaseSnapshot;
@@ -46,7 +46,7 @@ export class HealthServer {
     const adapter = this.cache.value;
     const socketConnected = this.src.socketConnected();
     return {
-      cto: this.src.cto,
+      cao: this.src.cao,
       ok: lease.state === 'held' && socketConnected,
       fireLatencyMsP50: m.fire.pct(50),
       linkLatencyMsP50: m.link.pct(50),

@@ -8,7 +8,7 @@ import { REPLY_BREAKER } from '../src/breaker.js';
 import { BrokerServer, BrokeredBrain, brokerSocketPath } from '../src/broker.js';
 import { MuseDuties } from '../src/sweep.js';
 import { Maintenance } from '../src/maintenance.js';
-import { ctoEntry } from '../src/config.js';
+import { caoEntry } from '../src/config.js';
 import { silentLogger } from '../src/util/log.js';
 import { DAY, HOUR, MIN } from '../src/util/time.js';
 import { FakeBrain, FakeClock, makeHarness, mention, testRegistry } from './helpers.js';
@@ -16,9 +16,9 @@ import { FakeBrain, FakeClock, makeHarness, mention, testRegistry } from './help
 test('OPT-FU-1 / KAR-FU-1: a deposed holder cannot post even inside its last heartbeat interval (live fence on post)', async () => {
   const h = await makeHarness('muse');
   const l = h.brain.leases.get('muse')!;
-  h.brain.leases.set('muse', { ...l, epoch: l.epoch + 1, holder: 'mini:cto-relay-muse' });
+  h.brain.leases.set('muse', { ...l, epoch: l.epoch + 1, holder: 'mini:cao-relay-muse' });
   assert.equal(h.lease.canAct(), true, 'the cached check alone would still allow it');
-  const r = await h.core.d.poster.post(ctoEntry(h.registry, 'muse').channelId, 'Already running. No second run started.', 'template');
+  const r = await h.core.d.poster.post(caoEntry(h.registry, 'muse').channelId, 'Already running. No second run started.', 'template');
   assert.deepEqual(r, { ok: false, reason: 'stale-epoch' });
   assert.equal(h.sender.posts.length, 0);
   assert.equal(h.lease.snapshot().state, 'lost');
@@ -53,7 +53,7 @@ test('KAR-FU-2: broker countStarts — global totals or the socket\'s own agent 
   const reg = testRegistry();
   const runDir = mkdtempSync(join(tmpdir(), 'run-'));
   const server = new BrokerServer(brain, runDir, silentLogger);
-  server.start(reg.ctos.filter((c) => c.adapter === 'manual'));
+  server.start(reg.caos.filter((c) => c.adapter === 'manual'));
   await new Promise((r) => setTimeout(r, 50));
   const claude = new BrokeredBrain(brokerSocketPath(runDir, 'claude'));
   assert.equal(await claude.countStarts(new Date(0).toISOString()), 0);
@@ -78,7 +78,7 @@ test('OPT-FU-4: the breaker\'s single reply survives a restart inside the window
 
 test('KAR-FU-4: a person\'s /fire command gets a plain refusal, not silence', async () => {
   const h = await makeHarness('claude');
-  const claude = ctoEntry(h.registry, 'claude');
+  const claude = caoEntry(h.registry, 'claude');
   await h.core.handleEvent({ eventId: '', channelId: claude.channelId, authorId: h.registry.jbUserId, text: 'do a thing', timestamp: '1.1', ingress: 'slash_command', command: '/fire-claude', triggerId: 'T1' });
   assert.equal(h.sender.texts().at(-1), 'Starts come from the CAO bots only. Ask Muse CAO in main chat.');
   assert.equal(h.brain.rows.size, 0);
@@ -112,8 +112,8 @@ test('C1-FU-4: a long task is clamped to 10 words in the short reply', async () 
 
 test('OPT-FU-2: a `linked` brain row with no journal entry is marked failed by the reconciler', async () => {
   const h = await makeHarness('claude');
-  const claude = ctoEntry(h.registry, 'claude');
-  const row = await h.brain.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', firedAt: new Date(h.clock.now()).toISOString(), evidence: { v: 0, cto: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } } });
+  const claude = caoEntry(h.registry, 'claude');
+  const row = await h.brain.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', firedAt: new Date(h.clock.now()).toISOString(), evidence: { v: 0, cao: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } } });
   h.brain.rows.get(row.id)!.status = 'linked';
   await h.advance(10 * MIN);
   await new Maintenance(h.core).reconcile();
@@ -144,7 +144,7 @@ test('ECO-FU-4: a row whose archived_at patch failed is not appended to the arch
   const clock = new FakeClock();
   const brain = new FakeBrain(clock);
   const reg = testRegistry();
-  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 't', evidence: { v: 0, cto: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
+  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 't', evidence: { v: 0, cao: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
   brain.rows.get(row.id)!.status = 'closed';
   brain.rows.get(row.id)!.completed_at = new Date(clock.now()).toISOString();
   clock.advance(91 * DAY);

@@ -1,5 +1,5 @@
 // Alerts to Muse CAO (main chat). Transport: an agent_comms row addressed to
-// MUSE with code `cto-relay-alert` (drained like other Muse mail), plus a local
+// MUSE with code `cao-relay-alert` (drained like other Muse mail), plus a local
 // alerts file that is always written — so an alert survives a brain outage.
 // Alerts carry machine codes and ids only.
 
@@ -17,7 +17,7 @@ export class Alerter {
 
   constructor(
     stateDir: string,
-    private readonly cto: string,
+    private readonly cao: string,
     private readonly fromAgent: string,
     private readonly clock: Clock,
     private readonly log: Logger,
@@ -30,7 +30,7 @@ export class Alerter {
   }
 
   alert(code: string, ids: Record<string, string | number | null> = {}): void {
-    const rec = { at: iso(this.clock()), cto: this.cto, code, ...ids };
+    const rec = { at: iso(this.clock()), cao: this.cao, code, ...ids };
     try {
       appendLineCapped(this.path, JSON.stringify(rec));
     } catch {
@@ -39,7 +39,7 @@ export class Alerter {
     this.log.warn('alert', { code, ...ids });
     const brain = this.brain;
     if (brain) {
-      const subject = `cto-relay alert: ${this.cto}: ${code}`;
+      const subject = `cao-relay alert: ${this.cao}: ${code}`;
       brain.insertAlertRow(ALERT_TO_AGENT, this.fromAgent, subject, JSON.stringify(rec)).catch(() => {
         this.log.warn('alert row write failed; local alert file holds it', { code });
       });

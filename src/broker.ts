@@ -1,12 +1,12 @@
 // Brain broker. D7: "The other three programs fetch only their two Slack keys"
-// — only the Muse program holds the `cto-relay-muse` brain key. Yet every
+// — only the Muse program holds the `cao-relay-muse` brain key. Yet every
 // program writes brain rows and holds a lease (D4/D6). The broker squares the
 // two: the Muse program serves one Unix socket per manual CAO, and the manual
 // programs make their brain calls through it. D4's manual health() rule
 // ("reachable means the Muse program is up") follows directly.
 //
-// Isolation: socket `<runDir>/broker/<cto>.sock`, mode 0660, group
-// `cto-relay-<cto>` — only that CAO's service user (and Muse) can connect. The
+// Isolation: socket `<runDir>/broker/<cao>.sock`, mode 0660, group
+// `cao-relay-<cao>` — only that CAO's service user (and Muse) can connect. The
 // broker scopes every call to the socket's CAO: its own agent_comms rows, its
 // own lease name, alerts to MUSE only, heartbeat read-only.
 
@@ -14,6 +14,7 @@ import { createServer, createConnection, type Server, type Socket } from 'node:n
 import { chmodSync, chownSync, existsSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { canonicalAgentName } from './legacy.js';
 import { z } from 'zod';
 import {
   BrainError,
@@ -28,7 +29,7 @@ import {
   type LeaseRow,
   type NewFireRow,
 } from './brain.js';
-import type { CtoEntry } from './config.js';
+import type { CaoEntry } from './config.js';
 import { ALERT_TO_AGENT } from './alerts.js';
 import { ensureDir } from './util/durable.js';
 import type { Logger } from './util/log.js';
@@ -61,8 +62,8 @@ const ResponseSchema = z.object({
   error: z.object({ code: z.string(), status: z.number().nullable() }).optional(),
 });
 
-export function brokerSocketPath(runDir: string, cto: string): string {
-  return join(runDir, 'broker', `${cto}.sock`);
+export function brokerSocketPath(runDir: string, cao: string): string {
+  return join(runDir, 'broker', `${cao}.sock`);
 }
 
 class ScopeError extends Error {
@@ -82,20 +83,20 @@ export class BrokerServer {
     private readonly log: Logger,
   ) {}
 
-  start(manualCtos: CtoEntry[]): void {
+  start(manualCaos: CaoEntry[]): void {
     ensureDir(join(this.runDir, 'broker'), 0o755);
-    for (const cto of manualCtos) {
-      const path = brokerSocketPath(this.runDir, cto.key);
+    for (const cao of manualCaos) {
+      const path = brokerSocketPath(this.runDir, cao.key);
       if (existsSync(path)) unlinkSync(path);
-      const server = createServer((sock) => this.serve(sock, cto));
+      const server = createServer((sock) => this.serve(sock, cao));
       server.listen(path, () => {
         try {
-          const gid = groupId(`cto-relay-${cto.key}`);
+          const gid = groupId(`cao-relay-${cao.key}`);
           chownSync(path, process.getuid?.() ?? 0, gid);
           chmodSync(path, 0o660);
         } catch {
           chmodSync(path, 0o600); // fail closed: only Muse can connect; that CAO's program refuses to start
-          this.log.error('broker socket group not set; manual program will fail closed', { cto: cto.key });
+          this.log.error('broker socket group not set; manual program will fail closed', { cao: cao.key });
         }
       });
       this.servers.push(server);
@@ -107,7 +108,7 @@ export class BrokerServer {
     this.servers = [];
   }
 
-  private serve(sock: Socket, cto: CtoEntry): void {
+  private serve(sock: Socket, cao: CaoEntry): void {
     let buf = '';
     sock.setEncoding('utf8');
     sock.on('data', (chunk: string) => {
@@ -120,13 +121,13 @@ export class BrokerServer {
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
-        void this.handleLine(line, cto).then((resp) => sock.write(JSON.stringify(resp) + '\n'));
+        void this.handleLine(line, cao).then((resp) => sock.write(JSON.stringify(resp) + '\n'));
       }
     });
     sock.on('error', () => undefined);
   }
 
-  private async handleLine(line: string, cto: CtoEntry): Promise<z.infer<typeof ResponseSchema>> {
+  private async handleLine(line: string, cao: CaoEntry): Promise<z.infer<typeof ResponseSchema>> {
     let req: Request;
     try {
       req = RequestSchema.parse(JSON.parse(line));
@@ -134,10 +135,10 @@ export class BrokerServer {
       return { id: -1, ok: false, error: { code: 'bad-request', status: null } };
     }
     try {
-      return { id: req.id, ok: true, result: await this.dispatch(req, cto) };
+      return { id: req.id, ok: true, result: await this.dispatch(req, cao) };
     } catch (err) {
       if (err instanceof ScopeError) {
-        this.log.warn('broker call out of scope', { cto: cto.key, op: req.op });
+        this.log.warn('broker call out of scope', { cao: cao.key, op: req.op });
         return { id: req.id, ok: false, error: { code: 'scope', status: null } };
       }
       if (err instanceof BrainError) return { id: req.id, ok: false, error: { code: err.code, status: err.status } };
@@ -145,13 +146,13 @@ export class BrokerServer {
     }
   }
 
-  private async owned(id: string, cto: CtoEntry): Promise<FireRow> {
+  private async owned(id: string, cao: CaoEntry): Promise<FireRow> {
     const row = await this.brain.getFireRow(id);
-    if (!row || row.to_agent !== cto.agentName) throw new ScopeError();
+    if (!row || canonicalAgentName(row.to_agent ?? '') !== cao.agentName) throw new ScopeError();
     return row;
   }
 
-  private async dispatch(req: Request, cto: CtoEntry): Promise<unknown> {
+  private async dispatch(req: Request, cao: CaoEntry): Promise<unknown> {
     const a = req.args;
     const str = (i: number): string => z.string().parse(a[i]);
     switch (req.op) {
@@ -159,26 +160,26 @@ export class BrokerServer {
         return this.brain.ping();
       case 'insertFireRow': {
         const row = a[0] as NewFireRow;
-        if (!row || row.toAgent !== cto.agentName || row.evidence?.cto !== cto.key) throw new ScopeError();
+        if (!row || row.toAgent !== cao.agentName || row.evidence?.cao !== cao.key) throw new ScopeError();
         return this.brain.insertFireRow(row);
       }
       case 'getFireRow': {
         const row = await this.brain.getFireRow(str(0));
-        return row && row.to_agent === cto.agentName ? row : null;
+        return row && canonicalAgentName(row.to_agent ?? '') === cao.agentName ? row : null;
       }
       case 'listFireRows':
-        if (str(0) !== cto.agentName) throw new ScopeError();
+        if (str(0) !== cao.agentName) throw new ScopeError();
         return this.brain.listFireRows(str(0), z.array(z.string()).parse(a[1]));
       case 'findFireRowByIdem':
-        if (str(0) !== cto.agentName) throw new ScopeError();
+        if (str(0) !== cao.agentName) throw new ScopeError();
         return this.brain.findFireRowByIdem(str(0), str(1));
       case 'patchFireRow':
-        await this.owned(str(0), cto);
+        await this.owned(str(0), cao);
         return this.brain.patchFireRow(str(0), a[1] as FirePatch, a[2] as FirePatchGuard | undefined);
       case 'countStarts': {
         // KAR-FU-2: global totals (no agent — the daily/monthly caps) or this socket's own agent only.
         const agent = a[1] === undefined || a[1] === null ? undefined : str(1);
-        if (agent !== undefined && agent !== cto.agentName) throw new ScopeError();
+        if (agent !== undefined && agent !== cao.agentName) throw new ScopeError();
         const until = a[2] === undefined || a[2] === null ? undefined : str(2);
         return this.brain.countStarts(str(0), agent, until);
       }
@@ -186,20 +187,20 @@ export class BrokerServer {
         if (str(0) !== ALERT_TO_AGENT) throw new ScopeError();
         return this.brain.insertAlertRow(str(0), str(1), str(2), str(3));
       case 'getLease':
-        if (str(0) !== cto.key) throw new ScopeError();
+        if (str(0) !== cao.key) throw new ScopeError();
         return this.brain.getLease(str(0));
       case 'insertLease': {
         const row = LeaseRowSchema.parse(a[0]);
-        if (row.name !== cto.key) throw new ScopeError();
+        if (row.name !== cao.key) throw new ScopeError();
         return this.brain.insertLease(row);
       }
       case 'casLease': {
         const next = LeaseRowSchema.parse(a[2]);
-        if (str(0) !== cto.key || next.name !== cto.key) throw new ScopeError();
+        if (str(0) !== cao.key || next.name !== cao.key) throw new ScopeError();
         return this.brain.casLease(str(0), z.number().int().parse(a[1]), next);
       }
       case 'renewLease':
-        if (str(0) !== cto.key) throw new ScopeError();
+        if (str(0) !== cao.key) throw new ScopeError();
         return this.brain.renewLease(str(0), z.number().int().parse(a[1]), str(2), str(3));
       case 'getHeartbeat':
         return this.brain.getHeartbeat(str(0));
@@ -302,7 +303,7 @@ export class BrokeredBrain implements BrainApi {
     return r === null ? null : LeaseRowSchema.parse(r);
   }
   async upsertHeartbeat(): Promise<void> {
-    throw new BrainError('http', 403); // heartbeat writes belong to the cto-heartbeat cron only
+    throw new BrainError('http', 403); // heartbeat writes belong to the cao-heartbeat cron only
   }
   async getHeartbeat(agent: string): Promise<HeartbeatRow | null> {
     const r = await this.call('getHeartbeat', [agent]);

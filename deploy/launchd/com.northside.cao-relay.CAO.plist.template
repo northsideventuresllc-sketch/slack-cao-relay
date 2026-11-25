@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mini (failover host) relay for one CAO. Copy to
+     /Library/LaunchDaemons/com.northside.cao-relay.<cao>.plist, replacing CAO_KEY.
+     Runs as the per-CAO macOS user cao-relay-<cao> (D6 isolation); keys come from
+     that user's login keychain via the wrapper, never from this file.
+     Not loaded at boot (RunAtLoad false): started only by cao-relay-mini-sync.sh --start. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.northside.cao-relay.CAO_KEY</string>
+  <key>UserName</key><string>cao-relay-CAO_KEY</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/cao-relay/deploy/scripts/mini-run.sh</string>
+    <string>CAO_KEY</string>
+  </array>
+  <key>RunAtLoad</key><false/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/var/log/cao-relay-CAO_KEY.log</string>
+  <key>StandardErrorPath</key><string>/var/log/cao-relay-CAO_KEY.log</string>
+</dict>
+</plist>

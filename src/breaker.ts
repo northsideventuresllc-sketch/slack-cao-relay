@@ -22,11 +22,11 @@ export class Breaker {
 
   constructor(
     private readonly journal: Journal,
-    private readonly cto: string,
+    private readonly cao: string,
   ) {}
 
   private attempts(normHash: string): JournalRecord[] {
-    return this.journal.all().filter((r) => r.kind === 'breaker-count' && r.hash === normHash && r.cto === this.cto);
+    return this.journal.all().filter((r) => r.kind === 'breaker-count' && r.hash === normHash && r.cao === this.cao);
   }
 
   /** The current window for this task, or null if none is open at `nowMs`. */
@@ -57,7 +57,7 @@ export class Breaker {
     this.replied.add(key);
     if (!already) {
       try {
-        this.journal.append({ kind: 'fire-state', fireId: repliedId, hash: normHash, cto: this.cto, state: 'breaker-replied' });
+        this.journal.append({ kind: 'fire-state', fireId: repliedId, hash: normHash, cao: this.cao, state: 'breaker-replied' });
       } catch {
         // journal unavailable: fall back to the in-memory flag for this process
       }
@@ -69,6 +69,6 @@ export class Breaker {
   record(normHash: string, fireId: string, nowMs: number): void {
     const w = this.currentWindow(normHash, nowMs);
     const windowStart = w ? w.start : nowMs;
-    this.journal.append({ kind: 'breaker-count', fireId, hash: normHash, cto: this.cto, windowStart: iso(windowStart) });
+    this.journal.append({ kind: 'breaker-count', fireId, hash: normHash, cao: this.cao, windowStart: iso(windowStart) });
   }
 }

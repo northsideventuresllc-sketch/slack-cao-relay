@@ -1,17 +1,19 @@
-// cto-heartbeat (D4): Muse CAO's liveness row, written every 15 minutes by the
-// cron `cto-heartbeat` on the VM (systemd timer), with the cto-relay-muse
-// brain key. Table cto_heartbeat (agent, heartbeat_at).
+// cao-heartbeat (D4): Muse CAO's liveness row, written every 15 minutes by the
+// cron `cao-heartbeat` on the VM (systemd timer), with the cao-relay-muse
+// brain key. Table cao_heartbeat (agent, heartbeat_at).
 
 import { DirectBrain } from './brain.js';
 import { CRED_BRAIN, readCredential } from './credentials.js';
+import { withLegacyEnv } from './legacy.js';
 
-export async function writeHeartbeat(env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function writeHeartbeat(rawEnv: NodeJS.ProcessEnv = process.env): Promise<number> {
+  const env = withLegacyEnv(rawEnv);
   const url = env.SUPABASE_URL;
   if (!url) {
     process.stderr.write('SUPABASE_URL not set\n');
     return 78;
   }
-  const brain = new DirectBrain({ supabaseUrl: url, apiKey: readCredential(env.CTO_RELAY_KEY_DIR ?? env.CREDENTIALS_DIRECTORY ?? null, CRED_BRAIN), httpsProxy: env.CTO_RELAY_HTTPS_PROXY ?? null, timeoutMs: 10_000 });
+  const brain = new DirectBrain({ supabaseUrl: url, apiKey: readCredential(env.CAO_RELAY_KEY_DIR ?? env.CREDENTIALS_DIRECTORY ?? null, CRED_BRAIN), httpsProxy: env.CAO_RELAY_HTTPS_PROXY ?? null, timeoutMs: 10_000 });
   try {
     await brain.upsertHeartbeat('MUSE', new Date().toISOString());
     process.stdout.write(JSON.stringify({ msg: 'heartbeat written', agent: 'MUSE' }) + '\n');

@@ -10,7 +10,7 @@ import { Closeouts } from '../src/closeout.js';
 import { Outbox } from '../src/outbox.js';
 import { PostQueueWatcher, appendPostQueue, type PostQueueEntry } from '../src/postqueue.js';
 import { appendLineCapped } from '../src/util/durable.js';
-import { ctoEntry } from '../src/config.js';
+import { caoEntry } from '../src/config.js';
 import { sha256 } from '../src/util/hash.js';
 import { silentLogger } from '../src/util/log.js';
 import { DAY, HOUR, MIN } from '../src/util/time.js';
@@ -23,7 +23,7 @@ function duties(h: Harness, alerts: string[] = []): MuseDuties {
 
 test('R7-NEW-1 + R7-NEW-2: a run silent for 6 hours is flagged stalled and the warning is posted to the CAO channel at once, once', async () => {
   const h = await makeHarness('muse');
-  await h.core.handleEvent(mention(h, 'claude', 'fire: x', { channelId: ctoEntry(h.registry, 'muse').channelId, text: `<@${ctoEntry(h.registry, 'muse').botUserId}> fire: x` }));
+  await h.core.handleEvent(mention(h, 'claude', 'fire: x', { channelId: caoEntry(h.registry, 'muse').channelId, text: `<@${caoEntry(h.registry, 'muse').botUserId}> fire: x` }));
   const id = h.brain.insertOrder[0]!;
   await h.core.claim(id, 'Muse CAO');
   await h.core.markStarted(id);
@@ -33,7 +33,7 @@ test('R7-NEW-1 + R7-NEW-2: a run silent for 6 hours is flagged stalled and the w
   const f = await d.sweep();
   assert.deepEqual(f.map((x) => x.kind), ['stalled']);
   assert.equal(h.sender.texts().at(-1), `No activity for 6 hours on fire id ${id}. It may be stalled. Muse CAO has been told.`);
-  assert.equal(h.sender.posts.at(-1)!.channel, ctoEntry(h.registry, 'muse').channelId);
+  assert.equal(h.sender.posts.at(-1)!.channel, caoEntry(h.registry, 'muse').channelId);
   const before = h.sender.posts.length;
   await d.sweep();
   assert.equal(h.sender.posts.length, before, 'posted once per silence');
@@ -157,12 +157,12 @@ test('R7-FU-6: a late write that lands in the rotated post-queue file is still d
   const clock = new FakeClock(Date.now() - 8 * DAY);
   const seen: PostQueueEntry[] = [];
   const w = new PostQueueWatcher(path, dir, clock.now, async (e) => void seen.push(e), () => undefined);
-  appendPostQueue(path, { kind: 'post', channel: 'cto-bots', text: 'a' });
+  appendPostQueue(path, { kind: 'post', channel: 'cao-bots', text: 'a' });
   await w.poll();
   clock.advance(8 * DAY);
   await w.poll(); // rotates
   const rotated = (await import('node:fs')).readdirSync(dir).find((n) => n.startsWith('post-queue.jsonl.'))!;
-  writeFileSync(join(dir, rotated), readFileSync(join(dir, rotated), 'utf8') + JSON.stringify({ kind: 'post', channel: 'cto-bots', text: 'late' }) + '\n');
+  writeFileSync(join(dir, rotated), readFileSync(join(dir, rotated), 'utf8') + JSON.stringify({ kind: 'post', channel: 'cao-bots', text: 'late' }) + '\n');
   clock.advance(10_000);
   await w.poll();
   assert.deepEqual(seen.map((e) => (e.kind === 'post' ? e.text : '')), ['a', 'late']);
@@ -175,15 +175,15 @@ test('R5-FU-9: the copy check posts a gap when a brain row has no journal record
   await h.advance(2 * HOUR);
   const m = await makeHarness('muse', { brain: h.brain, clock: h.clock });
   const d = duties(m);
-  assert.deepEqual(await d.copyCheck(ctoEntry(h.registry, 'claude'), [id]), { gap: 0 });
-  assert.deepEqual(await d.copyCheck(ctoEntry(h.registry, 'claude'), []), { gap: 1 });
+  assert.deepEqual(await d.copyCheck(caoEntry(h.registry, 'claude'), [id]), { gap: 0 });
+  assert.deepEqual(await d.copyCheck(caoEntry(h.registry, 'claude'), []), { gap: 1 });
   assert.equal(m.sender.texts().at(-1), 'Nightly copy check: 1 start(s) for Claude CAO are missing from the journal copy. Muse CAO has been told.');
 });
 
 test('R7-FU-2: health carries queue depth and lease state', async () => {
   const { HealthServer } = await import('../src/health.js');
   const h = await makeHarness('muse');
-  const hs = new HealthServer({ cto: 'muse', metrics: h.core.d.metrics, queueDepth: () => h.book.depth(), lease: () => h.lease.snapshot(), adapterHealth: () => h.core.d.adapter.health(), socketConnected: () => true, startedAt: 0 });
+  const hs = new HealthServer({ cao: 'muse', metrics: h.core.d.metrics, queueDepth: () => h.book.depth(), lease: () => h.lease.snapshot(), adapterHealth: () => h.core.d.adapter.health(), socketConnected: () => true, startedAt: 0 });
   const snap = await hs.snapshot();
   assert.equal(snap.queueDepth, 0);
   assert.equal(snap.leaseState, 'held');

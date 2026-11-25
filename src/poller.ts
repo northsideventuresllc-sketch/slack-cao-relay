@@ -1,18 +1,18 @@
 // The mini poller (D4/D6/D7): a 1-minute cron ON THE MINI.
 // - Curls the VM health endpoints (http://<vm-lan>:9101/health …9104).
-// - Offline rule: Muse CAO is offline when its cto_heartbeat row is older than
+// - Offline rule: Muse CAO is offline when its cao_heartbeat row is older than
 //   30 minutes (detection); the alert fires at 45 minutes (3 missed writes).
 // - Failover is detected when the VM's Muse health endpoint does not answer for
 //   3 consecutive 1-minute polls AND the heartbeat is older than 30 minutes.
 //   On failover with Muse CAO offline, the poller itself sends the agent_comms
 //   row to Claude CAO (its registry agent name).
-// - Alert transport: an agent_comms row addressed to Claude CTO (registry agentName); if the brain is
-//   down, the local file /var/lib/cto-relay/mini/alerts.jsonl (read by Claude CAO
+// - Alert transport: an agent_comms row addressed to Claude CAO (registry agentName); if the brain is
+//   down, the local file /var/lib/cao-relay/mini/alerts.jsonl (read by Claude CAO
 //   at the next morning check-in).
 // - Dead-owner fallback (D5 §6): while the Muse relay program is down, the
 //   poller runs the close-out sweep every 6 hours with the REDUCED test
 //   (prongs (b)+(c) only — prong (a) skipped; R7-NEW-4).
-// - Its own liveness: a cto_heartbeat row, agent MINI-POLLER, every run (R7-NEW-5).
+// - Its own liveness: a cao_heartbeat row, agent MINI-POLLER, every run (R7-NEW-5).
 // Secrets arrive on stdin as JSON from the mini's login keychain — never argv/env/disk.
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -20,7 +20,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { WebClient, LogLevel } from '@slack/web-api';
 import { DirectBrain, type BrainApi } from './brain.js';
-import { ctoEntry, loadRegistry, type Registry } from './config.js';
+import { caoEntry, loadRegistry, type Registry } from './config.js';
+import { withLegacyEnv } from './legacy.js';
 import { MuseDuties, POLLER_AGENT } from './sweep.js';
 import type { Poster } from './poster.js';
 import { appendLineCapped, writeFileAtomicSync } from './util/durable.js';
@@ -77,15 +78,16 @@ async function probe(url: string): Promise<boolean> {
   }
 }
 
-export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<number> {
-  const log = createLogger('cto-relay-mini-poller');
-  const stateDir = env.CTO_RELAY_MINI_DIR ?? '/var/lib/cto-relay/mini';
+export async function runPoller(rawEnv: NodeJS.ProcessEnv = process.env): Promise<number> {
+  const env = withLegacyEnv(rawEnv);
+  const log = createLogger('cao-relay-mini-poller');
+  const stateDir = env.CAO_RELAY_MINI_DIR ?? '/var/lib/cao-relay/mini';
   const statePath = join(stateDir, 'poller-state.json');
   const alertsPath = join(stateDir, 'alerts.jsonl');
-  const registry: Registry = loadRegistry(env.CTO_RELAY_REGISTRY);
+  const registry: Registry = loadRegistry(env.CAO_RELAY_REGISTRY);
   // Alerts go to Claude CAO's mailbox: its agent name comes from the registry, the single source ("Claude CAO").
-  const ALERT_TO = ctoEntry(registry, 'claude').agentName;
-  const vmLan = env.CTO_RELAY_VM_LAN ?? registry.healthBind.find((h) => h !== '127.0.0.1') ?? '127.0.0.1';
+  const ALERT_TO = caoEntry(registry, 'claude').agentName;
+  const vmLan = env.CAO_RELAY_VM_LAN ?? registry.healthBind.find((h) => h !== '127.0.0.1') ?? '127.0.0.1';
   const url = env.SUPABASE_URL;
   if (!url) return 78;
   const secrets = SecretsSchema.parse(JSON.parse(readFileSync(0, 'utf8')));
@@ -93,7 +95,7 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
 
   const state = existsSync(statePath) ? StateSchema.parse(JSON.parse(readFileSync(statePath, 'utf8'))) : StateSchema.parse({});
   const health: Record<string, boolean> = {};
-  for (const c of registry.ctos) health[c.key] = await probe(`http://${vmLan}:${c.healthPort}/health`);
+  for (const c of registry.caos) health[c.key] = await probe(`http://${vmLan}:${c.healthPort}/health`);
   let hbAge: number | null = null;
   try {
     const hb = await brain.getHeartbeat('MUSE');
@@ -104,7 +106,7 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
   const now = Date.now();
   const { next, d } = decide(state, health.muse === true, hbAge, now);
   // R7-NEW-5: the poller's own liveness row, watched every minute by the VM Muse program
-  // and shown to Claude CAO at its 9am check-in (`cto-relay checkin-report`).
+  // and shown to Claude CAO at its 9am check-in (`cao-relay checkin-report`).
   await brain.upsertHeartbeat(POLLER_AGENT, new Date(now).toISOString()).catch(() => undefined);
 
   const send = async (subject: string, body: Record<string, unknown>): Promise<void> => {
@@ -115,7 +117,7 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
     }
   };
   if (d.alertHeartbeat) await send('Muse CAO heartbeat is older than 45 minutes', { heartbeatAgeMs: hbAge, health });
-  if (d.failover) await send('cto-relay failover: VM Muse relay down 3 polls and Muse CAO offline. Run cto-relay-mini-sync.sh (checked step) then start the mini relays.', { heartbeatAgeMs: hbAge, health });
+  if (d.failover) await send('cao-relay failover: VM Muse relay down 3 polls and Muse CAO offline. Run cao-relay-mini-sync.sh (checked step) then start the mini relays.', { heartbeatAgeMs: hbAge, health });
   if (d.runSweep && secrets.slackBotToken) {
     const web = new WebClient(secrets.slackBotToken, { logLevel: LogLevel.ERROR, retryConfig: { retries: 0 } });
     const history = {
@@ -127,11 +129,11 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
     // R7-NEW-4: the fallback runs the REDUCED still-active test — prongs (b) + (c) only.
     // Prong (a) is skipped: the mini has no adapter to probe (and no v1 adapter has a live probe anyway).
     // (b) reads Slack history (last 24 h) of the four CAO channels from config/registry.json with the
-    //     Muse CAO bot token (channels:history / groups:history) from the cto-relay-muse login keychain.
+    //     Muse CAO bot token (channels:history / groups:history) from the cto-relay-muse login keychain item.
     // (c) reads evidence.relay.last_progress_at from the LIVE brain rows (not the up-to-24h-stale
-    //     off-host run-log copy), via the cto-relay-muse brain key in the same keychain.
+    //     off-host run-log copy), via the cto-relay-muse brain key item in the same keychain.
     const findings = await duties.sweep({ post: false });
-    if (findings.length) await send('cto-relay fallback sweep findings (Muse relay down; reduced test: prongs b+c)', { findings, reducedTest: 'b+c' });
+    if (findings.length) await send('cao-relay fallback sweep findings (Muse relay down; reduced test: prongs b+c)', { findings, reducedTest: 'b+c' });
   }
   writeFileAtomicSync(statePath, JSON.stringify(next));
   log.info('poll', { health, heartbeatAgeMs: hbAge, museFails: next.museFails, failover: d.failover });

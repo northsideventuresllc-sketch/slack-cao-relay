@@ -4,7 +4,7 @@
 // same serial lane as Slack events — so abort-vs-claim is decided by journal
 // write order alone (D4).
 //
-// Socket: <runDir>/<cto>/control.sock, mode 0660, group cto-relay-admin.
+// Socket: <runDir>/<cao>/control.sock, mode 0660, group cao-relay-admin.
 
 import { createServer, createConnection, type Server } from 'node:net';
 import { chmodSync, chownSync, existsSync, unlinkSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { ensureDir } from './util/durable.js';
-import { CTO_KEYS } from './config.js';
+import { CAO_KEYS } from './config.js';
 import type { Logger } from './util/log.js';
 
 export const ControlCommandSchema = z.discriminatedUnion('cmd', [
@@ -31,13 +31,13 @@ export const ControlCommandSchema = z.discriminatedUnion('cmd', [
   z.object({ cmd: z.literal('review-clear') }),
   z.object({ cmd: z.literal('journal-has'), fireId: z.string().min(8) }),
   z.object({ cmd: z.literal('status') }),
-  z.object({ cmd: z.literal('copy-check'), target: z.enum(CTO_KEYS), ids: z.array(z.string().min(1).max(64)).max(20_000) }),
+  z.object({ cmd: z.literal('copy-check'), target: z.enum(CAO_KEYS), ids: z.array(z.string().min(1).max(64)).max(20_000) }),
   z.object({ cmd: z.literal('test-fail-next-journal-write') }),
 ]);
 export type ControlCommand = z.infer<typeof ControlCommandSchema>;
 
-export function controlSocketPath(runDir: string, cto: string): string {
-  return join(runDir, cto, 'control.sock');
+export function controlSocketPath(runDir: string, cao: string): string {
+  return join(runDir, cao, 'control.sock');
 }
 
 export class ControlServer {
@@ -77,12 +77,12 @@ export class ControlServer {
     });
     this.server.listen(this.path, () => {
       try {
-        const gid = Number(execFileSync('getent', ['group', 'cto-relay-admin'], { encoding: 'utf8' }).split(':')[2]);
+        const gid = Number(execFileSync('getent', ['group', 'cao-relay-admin'], { encoding: 'utf8' }).split(':')[2]);
         chownSync(this.path, process.getuid?.() ?? 0, gid);
         chmodSync(this.path, 0o660);
       } catch {
         chmodSync(this.path, 0o600);
-        this.log.warn('control socket group cto-relay-admin not set; socket is owner-only');
+        this.log.warn('control socket group cao-relay-admin not set; socket is owner-only');
       }
     });
   }

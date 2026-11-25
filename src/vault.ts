@@ -38,12 +38,12 @@ export function parseSidecar(text: string): string | null {
 export class GitVaultReader implements VaultReader {
   constructor(
     private readonly dir: string | null,
-    private readonly webBase: string | null, // CTO_RELAY_VAULT_WEB_BASE, e.g. https://github.com/<owner>/<vault-repo>/blob/main
+    private readonly webBase: string | null, // CAO_RELAY_VAULT_WEB_BASE, e.g. https://github.com/<owner>/<vault-repo>/blob/main
     private readonly branch = 'main',
     /** C2-FU-3: the read-only vault deploy key (label `cto-relay-vault-read`), fetched into this program's tmpfs key dir. */
     private readonly readKeyPath: string | null = null,
-    private readonly knownHosts = '/etc/cto-relay/known_hosts',
-    /** C2-FU-3: the vault repo (CTO_RELAY_VAULT_REPO_URL); the checkout is created on first use, no manual clone step. */
+    private readonly knownHosts = '/etc/cao-relay/known_hosts',
+    /** C2-FU-3: the vault repo (CAO_RELAY_VAULT_REPO_URL); the checkout is created on first use, no manual clone step. */
     private readonly repoUrl: string | null = null,
   ) {}
 

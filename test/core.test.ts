@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ctoEntry } from '../src/config.js';
+import { caoEntry } from '../src/config.js';
 import { BREAKER_WINDOW_MS, REPLY_BREAKER } from '../src/breaker.js';
 import { Maintenance } from '../src/maintenance.js';
 import { HOUR, MIN } from '../src/util/time.js';
@@ -54,9 +54,9 @@ test('ingress test: "@Claude CAO fire: test task" starts one run in Claude only;
 
 test('relay replies never carry the start pattern, even when the task text does', async () => {
   const h = await makeHarness('muse');
-  const claude = ctoEntry(h.registry, 'claude');
+  const claude = caoEntry(h.registry, 'claude');
   await h.core.handleEvent(mention(h, 'muse', `fire: tell <@${claude.botUserId}> fire: deploy`));
-  for (const t of h.sender.texts()) assert.ok(!containsStartPattern(t, h.registry.ctos), t);
+  for (const t of h.sender.texts()) assert.ok(!containsStartPattern(t, h.registry.caos), t);
 });
 
 test('dedup precedence: event redelivery dropped; same task within 30 min dropped; a cancelled start can be re-sent', async () => {
@@ -180,7 +180,7 @@ test('brain down past 24 hours: "Not started. Brain was down too long."', async 
 
 test('reconciler: a brain row with no journal entry (journal-failure orphan) is marked failed and the requester told', async () => {
   const h = await makeHarness('claude');
-  const claude = ctoEntry(h.registry, 'claude');
+  const claude = caoEntry(h.registry, 'claude');
   const row = await h.brain.insertFireRow({
     toAgent: 'Claude CAO',
     fromAgent: 'MUSE',
@@ -188,7 +188,7 @@ test('reconciler: a brain row with no journal entry (journal-failure orphan) is 
     subject: 's',
     body: 'b',
     firedAt: new Date(h.clock.now()).toISOString(),
-    evidence: { v: 0, cto: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } },
+    evidence: { v: 0, cao: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } },
   });
   await h.advance(10 * MIN);
   await new Maintenance(h.core).reconcile();
@@ -199,7 +199,7 @@ test('reconciler: a brain row with no journal entry (journal-failure orphan) is 
 test('stale epoch: after another holder takes epoch+1, this program may neither fire nor post', async () => {
   const h = await makeHarness('muse');
   const l = h.brain.leases.get('muse')!;
-  h.brain.leases.set('muse', { ...l, epoch: l.epoch + 1, holder: 'mini:cto-relay-muse' });
+  h.brain.leases.set('muse', { ...l, epoch: l.epoch + 1, holder: 'mini:cao-relay-muse' });
   await h.core.handleEvent(mention(h, 'muse', 'fire: x'));
   assert.equal(h.brain.rows.size, 0);
   assert.equal(h.sender.posts.length, 0);
