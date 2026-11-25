@@ -1,8 +1,8 @@
 {
   "name": "slack-cao-relay",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Slack CAO Loop relay: one program per CAO (Muse, Claude, Gemini, AXON-Hermes).",
+  "description": "Slack CAO relay: five channels, four CAOs, one relay (Slack CAO Scope).",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -15,13 +15,11 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "lint:secrets": "bash scripts/check-no-secrets.sh",
-    "lint:shell": "shellcheck -S warning deploy/scripts/*.sh deploy/scripts/cao-relay-fetch-keys scripts/*.sh",
     "check": "npm run typecheck && npm test && npm run lint:secrets"
   },
   "dependencies": {
     "@slack/socket-mode": "^3.1.1",
     "@slack/web-api": "^8.3.0",
-    "undici": "^8.12.4",
     "zod": "^4.6.7"
   },
   "devDependencies": {

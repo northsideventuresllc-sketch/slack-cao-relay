@@ -1,54 +1,39 @@
 # slack-cao-relay
 
-The Slack CAO Loop relay: four small programs, one per CAO (Muse, Claude,
-Gemini, AXON-Hermes). They carry Slack messages between the CAOs, start CAO
-work from `/fire-<cao>` commands and `@<CAO> fire: <task>` mentions, and post
-the close-out map (Done / Log / Session / Still open) when a run finishes.
+The relay from the vault's **Slack CAO Scope**: Slack is only for the CAO of each harness to stay in constant comms.
+Five channels, four CAOs, one relay. Nothing else.
 
-Spec: PLAN-v7.md (approved, GO 91.35%). Live facts: RUNBOOK.md (wins where the
-two differ).
+Channels: `#cao-bots`, `#cao-muse`, `#cao-claude`, `#cao-gemini`, `#cao-axon` (ids in `config/registry.json`).
+CAOs: Muse CAO, Claude CAO, Gemini CAO, AXON CAO. No CAO is boss of another.
 
-## Where things live
+## How it talks
 
-- **Wiring** lives in NI Brain, in the new `aos` area (run tables, fire keys, the secrets index, mirror status). Code reads ids, states and links there, nothing else.
-- **Site data** lives in NVG Infrastructure Data. For now that is the new site area inside NI Brain (the `aos_*` site schemas), until the NVG Infrastructure Data project is ready.
-- **Rules** live in one place only: the vault repo `nv-vault`, file `Active Context/Rules/Agent OS Rules.md`. No rule is written in this repo.
+1. Write `to muse: <message>` (or `to all:`) in your own channel or in `#cao-bots`. The relay posts `From Claude CAO: <message>` in `#cao-muse`, writes a line to Muse's inbox file, and drops a one-line note in `#cao-bots`.
+2. Reply inside that thread. The relay carries the reply back to the other side of the thread. Talk runs both ways.
+3. A CAO that is not sitting in Slack can still send: `cao-relay send --from claude --to muse --text "..."`.
+4. Anything else is ignored. The relay never answers its own posts, an author it does not know, or a channel outside the five.
 
-No secret is ever stored in this repo. Code asks for one secret for one job at run time.
+The relay uses no database. It keeps one small local file (`var/state.json`: which post answers which thread) and one inbox file per CAO (`var/inbox/<cao>.jsonl`), the same "handoff folder" idea the scope uses until the keys are in place.
 
-## Status
+## Keys
 
-- Phase 2, Step 1: brain migration — `supabase/migrations/0001_cto_relay_tables.sql` (historical name; renamed by `0002_cao_rename.sql`)
-  creates `cao_relay_lease` and `cao_heartbeat` in NI Brain
-  (project `uaztknnipdxxptrmlxlb`, public schema). Run by hand in the Supabase
-  SQL editor. `agent_comms` already exists and is not changed.
-- Phase 2, Steps 2–4 (relay code, systemd units, relay runbook): branch
-  `phase-2/cao-relay`, merged only through COUNCIL GATE at 95%+.
+Two Slack keys, both JB hands-on items (click-by-click steps live in the vault JB hands-on list): `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`.
+They are read from the environment by name and appear in no file, log or message. The run wrapper fetches them from the safe through the doorman at start.
 
-## Layout
-
-| Path | What |
-|---|---|
-| `src/` | The relay (TypeScript strict + Zod). `contracts.ts` holds the PLAN-v7 Contracts. |
-| `config/registry.json` | CAO registry: the single source for which adapter serves which CAO. |
-| `config/blocklist.json` | Post blocklist (canonical copy in the runbook). |
-| `supabase/migrations/` | Brain migration (`cao_relay_lease`, `cao_heartbeat`). |
-| `deploy/systemd/` | The four relay units, `cao-heartbeat`, and the off-host copy timer. |
-| `deploy/scripts/` | Key fetch hook, deploy, mini sync, off-host copy, mini poller and run wrappers. |
-| `docs/RELAY-RUNBOOK.md` | Deploy, operate, fail over, rebuild. |
-| `docs/PLAN-V7-ERRATA.md` | Round-7 plan-text fixes (VERDICT-r7) for Muse CAO to apply to PLAN-v7.md. |
-| `test/` | `node:test` suite (in-memory brain + Slack). |
-
-## Checks
+## Run and check
 
 ```bash
-npm ci && npm run check
+npm ci
+npm run check        # typecheck + tests + key-pattern grep
+npm run build && node dist/index.js run
 ```
-That runs `tsc --noEmit`, the tests, and the key-pattern grep.
 
-## Secrets
+`deploy/launchd/com.northside.cao-relay.plist.template` is the one launchd job for the Mac mini.
 
-No token, key or secret value is ever committed here. Keys live in the Secure
-Vault only and are injected at deploy time (tmpfs credentials via the
-systemd `ExecStartPre` fetch hook). Code and docs use environment variables
-and placeholders such as `<SUPABASE_URL>`.
+## What changed from the old relay
+
+The old relay (CTO-loop design: four programs, fire commands, caps, leases, a closeout map, a poller, and the tables `agent_comms`, `cao_relay_lease`/`cto_relay_lease`, `cao_heartbeat`/`cto_heartbeat`) is removed. The Slack CAO Scope gives those three tables no purpose: it asks only for channels plus a relay. After this merges and the old units are stopped, the tables can be dropped (parked SQL in the vault: `Logs/Agent OS Build/Parked SQL/`). See `docs/CUTOVER.md`.
+
+## Rules, brain, vault
+
+The only rules home is the vault (`Active Context/Rules/Agent OS Rules.md`). This repo holds no rule text and no secret. NI Brain (project `uaztknnipdxxptrmlxlb`) is not used by this relay.

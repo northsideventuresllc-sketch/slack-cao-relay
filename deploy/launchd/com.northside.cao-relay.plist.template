@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- One job for the whole relay. The wrapper script fetches SLACK_BOT_TOKEN and SLACK_APP_TOKEN from the safe at start;
+     no key is written into this file. Replace <REPO_DIR> and <STATE_DIR> when installing. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.northside.cao-relay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>cd "<REPO_DIR>" &amp;&amp; exec node dist/index.js run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CAO_RELAY_STATE_DIR</key><string><STATE_DIR></string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string><STATE_DIR>/relay.log</string>
+  <key>StandardErrorPath</key><string><STATE_DIR>/relay.err.log</string>
+</dict>
+</plist>
