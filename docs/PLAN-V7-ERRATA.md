@@ -135,7 +135,7 @@ Items the build fixed in code are listed in the PR body, not here, except where 
   > after the first checks are done, later the same day
 - **R7-FU-23.** D4 reconciler: add:
 
-  > During a brain outage a restarting program refuses to start, so its reconciler runs once the brain is back and it starts; until then the requester sees no reply from that CTO, and the Muse program (if running) posts '<CTO> relay is down' in #cto-bots.
+  > During a brain outage a restarting program refuses to start, so its reconciler runs once the brain is back and it starts; until then the requester sees no reply from that CAO, and the Muse program (if running) posts '<CAO> relay is down' in #cto-bots.
 
   (Stated in code and in runbook §11b.)
 - **R7-FU-24.** Trace R6-NEW-3: replace "no `'aborted'` literal survives" with:

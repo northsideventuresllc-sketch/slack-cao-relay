@@ -99,9 +99,9 @@ Fill these in. Do not guess them. Every value below either has its real value he
    - `SUPABASE_URL=<SUPABASE_URL>`: the NI Brain REST base for project `uaztknnipdxxptrmlxlb`. Read it from the Supabase dashboard → Project Settings → API.
    - `CTO_RELAY_VAULT_WEB_BASE` and `CTO_RELAY_VAULT_REPO_URL` are prefilled from Appendix A; verify them.
 7. **`/etc/cto-relay/offhost.env`:**
-   - `VAULT_MIRROR_PATH` = `_AI/CTO Loop/Mirror` and `VAULT_ARCHIVE_PATH` = `_AI/CTO Loop/Brain Archive` (C1-FU-2). These are new folders for the loop; Muse CTO may rename them.
+   - `VAULT_MIRROR_PATH` = `_AI/CTO Loop/Mirror` and `VAULT_ARCHIVE_PATH` = `_AI/CTO Loop/Brain Archive` (C1-FU-2). These are new folders for the loop; Muse CAO may rename them.
    - `MINI_SSH_DEST` = `<user>@<name>.local`. Read it on the mini (C1-FU-3): run `whoami` as the copy user, and `scutil --get LocalHostName`.
-8. Fill `<MUSE_CTO_USER>` in `deploy/sudoers/cto-relay` with the login of Muse CTO's main-chat user on this VM.
+8. Fill `<MUSE_CTO_USER>` in `deploy/sudoers/cto-relay` with the login of Muse CAO's main-chat user on this VM.
 
 ---
 
@@ -258,7 +258,7 @@ JB asks in main chat. Muse CAO appends a `fire` entry to the post-queue as `cto-
 sudo -u cto-relay-muse /usr/local/bin/cto-relay post-queue-append --kind fire --cto claude --task "Build the Match Fit email groups"
 ```
 - **For Muse:** the Muse program feeds its own fire path; it is Muse's single parser.
-- **For another CTO:** the Muse program posts `@<CTO> fire: <task>` as the Muse CTO bot in that CTO's channel. Only that CTO's program receives the `app_mention`, so exactly one run starts there.
+- **For another CAO:** the Muse program posts `@<CAO> fire: <task>` as the Muse CAO bot in that CAO's channel. Only that CAO's program receives the `app_mention`, so exactly one run starts there.
 
 ### Posting Muse CAO's own words (an ordinary post that can never start work)
 ```bash
@@ -331,7 +331,7 @@ It must follow these rules:
 | `from_agent` | the requesting CAO bot's agent name |
 | `from_harness` / `to_harness` | `cto-relay` / the CAO key |
 | `channel` | `slack` |
-| `subject` | `Start for <CTO>` |
+| `subject` | `Start for <CAO>` |
 | `body` | the task text. The brain row is the content record, kept 90 days, then archived to the vault. |
 | `status` | `queued` → … |
 | `fired_at` / `completed_at` | timestamps |
@@ -523,7 +523,7 @@ A run is **still active** if any of these holds:
 ## 11b. Brain outage — what the requester sees (R7-FU-23)
 - **The first 90 s of an outage:** starts are held in memory. The requester gets "Queued. Brain is down. Will retry." (Muse) or "Waiting. It will start at the next check-in…" (manual).
 - **After 3 missed lease heartbeats (90 s):** a running program stops firing and posting (lease rule). New starts in that time get **no reply**. **COUNCIL GATE flag:** the plan's brain-down reply path only covers outages shorter than 90 s.
-- **A program that restarts during the outage** cannot reach the brain, so it refuses to start (fail-closed). Its restore and reconciler run once the brain is back and it starts; loss notices arrive then. Meanwhile, if the Muse program is still up, it posts "<CTO> relay is down" in #cto-bots after 3 failed health polls.
+- **A program that restarts during the outage** cannot reach the brain, so it refuses to start (fail-closed). Its restore and reconciler run once the brain is back and it starts; loss notices arrive then. Meanwhile, if the Muse program is still up, it posts "<CAO> relay is down" in #cto-bots after 3 failed health polls.
 
 ## 11c. The 3-second reply bound (C2-FU-9)
 - The brain work before a short reply runs inside a **2.2 s budget from socket receipt**. That work is the three cap counts and the live lease read, run concurrently, then the brain-row write.

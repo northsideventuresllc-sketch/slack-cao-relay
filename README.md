@@ -2,7 +2,7 @@
 
 The Slack CAO Loop relay: four small programs, one per CAO (Muse, Claude,
 Gemini, AXON-Hermes). They carry Slack messages between the CAOs, start CAO
-work from `/fire-<cto>` commands and `@<CTO> fire: <task>` mentions, and post
+work from `/fire-<cto>` commands and `@<CAO> fire: <task>` mentions, and post
 the close-out map (Done / Log / Session / Still open) when a run finishes.
 
 Spec: PLAN-v7.md (approved, GO 91.35%). Live facts: RUNBOOK.md (wins where the

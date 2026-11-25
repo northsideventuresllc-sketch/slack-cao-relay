@@ -22,7 +22,7 @@
 // brain, so it refuses to start (D6 fail-closed) and its reconciler runs only
 // once the brain is back and the program starts. In the meantime the requester
 // sees no reply from that CAO's relay; if the Muse program is still running it
-// posts "<CTO> relay is down" in #cto-bots after 3 failed health polls. Loss
+// posts "<CAO> relay is down" in #cto-bots after 3 failed health polls. Loss
 // notices arrive when the program starts after the brain returns.
 // Reads the journal's fire-request records and the brain rows.
 //   - a journal record with no matching brain row is a lost held start → loss
