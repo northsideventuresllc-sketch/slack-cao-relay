@@ -1,7 +1,7 @@
 // Lease handling (D6 failover + Contracts "The verifier is the lease table").
 // Lease 90 s, heartbeat 30 s. Acquire with epoch+1. A stale epoch may neither
 // fire nor post. 3 missed heartbeats (90 s) → stop firing/posting, alert Muse
-// CTO, and resume only after re-acquiring with epoch+1.
+// CAO, and resume only after re-acquiring with epoch+1.
 
 import type { BrainApi, LeaseRow } from './brain.js';
 import type { Logger } from './util/log.js';
@@ -40,7 +40,7 @@ export class LeaseManager {
 
   constructor(
     private readonly brain: BrainApi,
-    readonly name: string, // the CTO key: muse | claude | gemini | axon-hermes
+    readonly name: string, // the CAO key: muse | claude | gemini | axon-hermes
     readonly holder: string, // e.g. "vm:cto-relay-muse"
     private readonly clock: Clock,
     private readonly log: Logger,

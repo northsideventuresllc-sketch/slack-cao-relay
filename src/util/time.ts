@@ -1,4 +1,4 @@
-// Time helpers in a named IANA zone (the 9am CTO check-in is local time).
+// Time helpers in a named IANA zone (the 9am CAO check-in is local time).
 export type Clock = () => number;
 export const realClock: Clock = () => Date.now();
 

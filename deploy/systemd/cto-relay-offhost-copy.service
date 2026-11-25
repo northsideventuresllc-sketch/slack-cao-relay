@@ -3,7 +3,7 @@
 # state), plus the hygiene check (checksum + record count). Runs as root so it
 # can read the four 0700 state directories.
 [Unit]
-Description=Slack CTO Loop — nightly off-host copy + hygiene check
+Description=Slack CAO Loop — nightly off-host copy + hygiene check
 After=network-online.target
 Wants=network-online.target
 

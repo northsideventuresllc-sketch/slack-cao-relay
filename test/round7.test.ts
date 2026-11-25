@@ -21,18 +21,18 @@ function duties(h: Harness, alerts: string[] = []): MuseDuties {
   return new MuseDuties(h.brain, h.registry, h.core.d.poster, { history: async () => [] }, h.clock.now, silentLogger, (c) => void alerts.push(c), async () => true);
 }
 
-test('R7-NEW-1 + R7-NEW-2: a run silent for 6 hours is flagged stalled and the warning is posted to the CTO channel at once, once', async () => {
+test('R7-NEW-1 + R7-NEW-2: a run silent for 6 hours is flagged stalled and the warning is posted to the CAO channel at once, once', async () => {
   const h = await makeHarness('muse');
   await h.core.handleEvent(mention(h, 'claude', 'fire: x', { channelId: ctoEntry(h.registry, 'muse').channelId, text: `<@${ctoEntry(h.registry, 'muse').botUserId}> fire: x` }));
   const id = h.brain.insertOrder[0]!;
-  await h.core.claim(id, 'Muse CTO');
+  await h.core.claim(id, 'Muse CAO');
   await h.core.markStarted(id);
   await h.advance(6 * HOUR + MIN);
   const alerts: string[] = [];
   const d = duties(h, alerts);
   const f = await d.sweep();
   assert.deepEqual(f.map((x) => x.kind), ['stalled']);
-  assert.equal(h.sender.texts().at(-1), `No activity for 6 hours on fire id ${id}. It may be stalled. Muse CTO has been told.`);
+  assert.equal(h.sender.texts().at(-1), `No activity for 6 hours on fire id ${id}. It may be stalled. Muse CAO has been told.`);
   assert.equal(h.sender.posts.at(-1)!.channel, ctoEntry(h.registry, 'muse').channelId);
   const before = h.sender.posts.length;
   await d.sweep();
@@ -135,7 +135,7 @@ test('R7-NEW-7: a Gemini Session pointer (not a link) must be filed in the vault
   const h = await makeHarness('gemini');
   await h.core.handleEvent(mention(h, 'gemini', 'fire: research'));
   const id = h.brain.insertOrder[0]!;
-  await h.core.claim(id, 'Muse CTO');
+  await h.core.claim(id, 'Muse CAO');
   await h.core.setLink(id, 'mini session gem-42 + Slack thread');
   const vault = new Vault('## Decided\n- Research done.\n');
   const co = new Closeouts(h.core, new Outbox(h.dir), vault, h.core.d.caps);
@@ -177,7 +177,7 @@ test('R5-FU-9: the copy check posts a gap when a brain row has no journal record
   const d = duties(m);
   assert.deepEqual(await d.copyCheck(ctoEntry(h.registry, 'claude'), [id]), { gap: 0 });
   assert.deepEqual(await d.copyCheck(ctoEntry(h.registry, 'claude'), []), { gap: 1 });
-  assert.equal(m.sender.texts().at(-1), 'Nightly copy check: 1 start(s) for Claude CTO are missing from the journal copy. Muse CTO has been told.');
+  assert.equal(m.sender.texts().at(-1), 'Nightly copy check: 1 start(s) for Claude CAO are missing from the journal copy. Muse CAO has been told.');
 });
 
 test('R7-FU-2: health carries queue depth and lease state', async () => {

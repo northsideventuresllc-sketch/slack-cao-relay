@@ -1,7 +1,7 @@
 // Cost envelope (D4): the ceiling is enforced on COUNT by the relay (hard stop
 // on starts per day and per month), reported on tokens. Caps are totals across
-// all four CTOs (counted from the brain rows every program can see), plus the
-// per-CTO weekly cap for manual CTOs and the overrun block. The lower binds.
+// all four CAOs (counted from the brain rows every program can see), plus the
+// per-CAO weekly cap for manual CAOs and the overrun block. The lower binds.
 
 import type { BrainApi } from './brain.js';
 import { effectiveDailyCap, type Caps, type CtoEntry } from './config.js';
@@ -12,7 +12,7 @@ export type CapVerdict = { kind: 'ok' } | { kind: 'refused'; cap: 'daily' | 'mon
 
 export const REPLY_CAP_DAILY = 'Not started. The daily start limit is reached. It resets at midnight.';
 export const REPLY_CAP_MONTHLY = 'Not started. The monthly start limit is reached.';
-export const REPLY_CAP_WEEKLY = 'Not started. This CTO has used its starts for the week.';
+export const REPLY_CAP_WEEKLY = 'Not started. This CAO has used its starts for the week.';
 export const REPLY_OVERRUN = 'Not started. The last run went over its token budget. Starts resume after the Monday review.';
 
 export class CostEnvelope {

@@ -21,12 +21,12 @@
 // R7-FU-23 — during a brain outage: a program that RESTARTS cannot reach the
 // brain, so it refuses to start (D6 fail-closed) and its reconciler runs only
 // once the brain is back and the program starts. In the meantime the requester
-// sees no reply from that CTO's relay; if the Muse program is still running it
+// sees no reply from that CAO's relay; if the Muse program is still running it
 // posts "<CTO> relay is down" in #cto-bots after 3 failed health polls. Loss
 // notices arrive when the program starts after the brain returns.
 // Reads the journal's fire-request records and the brain rows.
 //   - a journal record with no matching brain row is a lost held start → loss
-//     notice in the CTO's channel;
+//     notice in the CAO's channel;
 //   - a brain row with no journal entry (journal-failure orphan) → marked
 //     `failed`, and the requester is told.
 
@@ -204,7 +204,7 @@ export class Maintenance {
     }
   }
 
-  /** 9am: the pending list in this CTO's channel (nothing waits invisibly), plus unclaimed-past-limit alerts. */
+  /** 9am: the pending list in this CAO's channel (nothing waits invisibly), plus unclaimed-past-limit alerts. */
   async nineAm(): Promise<void> {
     const d = this.d;
     const lines: string[] = [];

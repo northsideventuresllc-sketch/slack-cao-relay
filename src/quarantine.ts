@@ -3,7 +3,7 @@
 // + text hash + reason — never event text — and the event is skipped.
 // Start-pattern events are EXEMPT from quarantine entirely: a start-pattern
 // event that fails 5 times gets a failure reply the same day, an alert to Muse
-// CTO, and ONE retry after 1 hour; if that fails, a second failure reply +
+// CAO, and ONE retry after 1 hour; if that fails, a second failure reply +
 // alert, and it is dropped — never re-quarantined.
 
 import { join } from 'node:path';
@@ -14,8 +14,8 @@ export const MAX_EVENT_FAILURES = 5;
 export const START_RETRY_DELAY_MS = HOUR;
 export const QUARANTINE_RETENTION_MS = 7 * DAY;
 
-export const REPLY_START_FAILED_FIRST = 'Could not start this. Muse CTO has been told. One more try in 1 hour.';
-export const REPLY_START_FAILED_FINAL = 'Could not start this after one more try. Muse CTO has been told. Please re-send it.';
+export const REPLY_START_FAILED_FIRST = 'Could not start this. Muse CAO has been told. One more try in 1 hour.';
+export const REPLY_START_FAILED_FINAL = 'Could not start this after one more try. Muse CAO has been told. Please re-send it.';
 
 export class Quarantine {
   readonly path: string;

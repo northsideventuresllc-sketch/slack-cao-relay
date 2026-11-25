@@ -1,4 +1,4 @@
-// cto-heartbeat (D4): Muse CTO's liveness row, written every 15 minutes by the
+// cto-heartbeat (D4): Muse CAO's liveness row, written every 15 minutes by the
 // cron `cto-heartbeat` on the VM (systemd timer), with the cto-relay-muse
 // brain key. Table cto_heartbeat (agent, heartbeat_at).
 

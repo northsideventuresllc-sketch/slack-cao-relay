@@ -1,7 +1,7 @@
-# Slack CTO Loop — Relay Runbook
+# Slack CAO Loop — Relay Runbook
 
-Owner: Muse CTO. Spec: PLAN-v7.md (D4, D5, D6, D7). Live facts: RUNBOOK.md (wins where the two differ).
-This runbook is written so Claude CTO can rebuild the relay alone (Phase 2 solo-rebuild test, 2 hours).
+Owner: Muse CAO. Spec: PLAN-v7.md (D4, D5, D6, D7). Live facts: RUNBOOK.md (wins where the two differ).
+This runbook is written so Claude CAO can rebuild the relay alone (Phase 2 solo-rebuild test, 2 hours).
 
 **Secrets rule.** No key, token or secret value goes in this repo, in a chat, in a log, or in the proof pack. Keys live in the Secure Vault only. They are fetched at start into tmpfs. Every `<ANGLE_BRACKET>` value below is a placeholder you fill on the host.
 
@@ -11,10 +11,10 @@ This runbook is written so Claude CTO can rebuild the relay alone (Phase 2 solo-
 
 | Program | systemd unit | Service user | Health port | Keys it holds |
 |---|---|---|---|---|
-| Muse CTO relay | `cto-relay-muse.service` | `cto-relay-muse` | 9101 | Muse app token, Muse bot token, brain key `cto-relay-muse` |
-| Claude CTO relay | `cto-relay-claude.service` | `cto-relay-claude` | 9102 | Claude app token, Claude bot token |
-| Gemini CTO relay | `cto-relay-gemini.service` | `cto-relay-gemini` | 9103 | Gemini app token, Gemini bot token |
-| AXON-Hermes CTO relay | `cto-relay-axon-hermes.service` | `cto-relay-axon-hermes` | 9104 | AXON-Hermes app token, AXON-Hermes bot token |
+| Muse CAO relay | `cto-relay-muse.service` | `cto-relay-muse` | 9101 | Muse app token, Muse bot token, brain key `cto-relay-muse` |
+| Claude CAO relay | `cto-relay-claude.service` | `cto-relay-claude` | 9102 | Claude app token, Claude bot token |
+| Gemini CAO relay | `cto-relay-gemini.service` | `cto-relay-gemini` | 9103 | Gemini app token, Gemini bot token |
+| AXON-Hermes CAO relay | `cto-relay-axon-hermes.service` | `cto-relay-axon-hermes` | 9104 | AXON-Hermes app token, AXON-Hermes bot token |
 
 - **Health:** each program answers `GET /health` on `127.0.0.1:<port>` and on the VM LAN address `198.19.0.2:<port>` (RUNBOOK Phase 0 close-out). Only this machine and the mini can open it.
 - **Code:** `/opt/cto-relay`. Node 22+. The command is `/usr/local/bin/cto-relay`.
@@ -27,17 +27,17 @@ This runbook is written so Claude CTO can rebuild the relay alone (Phase 2 solo-
   - `alerts.jsonl`: the local copy of every alert. It is capped at 1 MiB and rotated by rename (`.1`–`.3`), never truncated.
   - `vault/`: this program's checkout of the vault.
   - Muse only: `post-queue.jsonl`, `mirror/` and `archive/`.
-- **Post-queue file layout (R7-FU-7):** v1 has exactly one post-queue file, `/var/lib/cto-relay/muse/post-queue.jsonl`. The Claude, Gemini and AXON-Hermes programs have none. Off-VM CTOs cannot write to this VM, so their words go through Muse CTO into the Muse file (D2). Their programs' `message` events feed only abort parsing.
+- **Post-queue file layout (R7-FU-7):** v1 has exactly one post-queue file, `/var/lib/cto-relay/muse/post-queue.jsonl`. The Claude, Gemini and AXON-Hermes programs have none. Off-VM CAOs cannot write to this VM, so their words go through Muse CAO into the Muse file (D2). Their programs' `message` events feed only abort parsing.
 - **Keys:** `/run/credentials/cto-relay-<cto>/`. This is tmpfs (dir 0500, files 0400, owner = the service user). It is rewritten on every start and wiped on stop.
 - **Sockets:**
   - `/run/cto-relay/<cto>/control.sock` (group `cto-relay-admin`).
-  - `/run/cto-relay/broker/<cto>.sock` (group `cto-relay-<cto>`; manual CTOs only).
+  - `/run/cto-relay/broker/<cto>.sock` (group `cto-relay-<cto>`; manual CAOs only).
 - **Brain tables touched, and only these:**
   - `agent_comms`: existing; 15 real columns, no `payload` and no `updated_at`.
   - `cto_relay_lease` and `cto_heartbeat`: created by `supabase/migrations/0001_cto_relay_tables.sql`.
 
 ### Why only Muse holds the brain key — the brain broker
-D7 says the Claude, Gemini and AXON-Hermes programs fetch only their two Slack keys. But every program writes brain rows and holds a lease. So the Muse program serves one Unix socket per manual CTO. The other three make their brain calls through it. Each socket is scoped to its own CTO:
+D7 says the Claude, Gemini and AXON-Hermes programs fetch only their two Slack keys. But every program writes brain rows and holds a lease. So the Muse program serves one Unix socket per manual CAO. The other three make their brain calls through it. Each socket is scoped to its own CAO:
 - its own `agent_comms` rows only (by `to_agent`);
 - its own lease name only;
 - alerts to MUSE only;
@@ -57,23 +57,23 @@ D4's manual `health()` rule ("reachable means the Muse program is up") follows f
 Fill these in. Do not guess them. Every value below either has its real value here, or a named source to read it from. `deploy.sh` lists any line still holding a `<PLACEHOLDER>` in any case (C2-FU-11), and the services refuse to start while one remains.
 
 1. **Phase 3 Slack work** (C2-FU-7):
-   - **Four private CTO channels.** Create them and put their ids into `config/registry.json` in place of `<CTO_*_CHANNEL_ID>`. A program refuses to start while any channel id is a placeholder (the refusal names `config/registry.json`).
+   - **Four private CAO channels.** Create them and put their ids into `config/registry.json` in place of `<CTO_*_CHANNEL_ID>`. A program refuses to start while any channel id is a placeholder (the refusal names `config/registry.json`).
    - **Event subscriptions, on each of the four apps** (Event Subscriptions → Subscribe to bot events): `app_mention`, `message.channels`, `message.groups`. Without them the relay sees no starts; the Phase 5 ingress test catches it.
    - **Slash commands, one per app, in Socket Mode** (Slash Commands): `/fire-muse`, `/fire-claude`, `/fire-gemini`, `/fire-axon-hermes`. Check each name is free first (dashboard list; fallback names in D4). The `commands` scope is already granted (Phase 1, 10 scopes each).
 2. **Agent names — set** (COUNCIL GATE round 1). `config/registry.json` carries:
    - `MUSE`: verified from a live row;
-   - `Claude CTO`: confirmed by JB (live rows carry it; PLAN-v7 D7 wrote `CLAUDE`);
-   - `Gemini CTO`: seen in live rows;
-   - `AXON-Hermes CTO`: set by COUNCIL GATE round 1, confirmed by JB (matches the Slack bot name).
+   - `Claude CAO`: confirmed by JB (live rows carry it; PLAN-v7 D7 wrote `CLAUDE`);
+   - `Gemini CAO`: seen in live rows;
+   - `AXON-Hermes CAO`: set by COUNCIL GATE round 1, confirmed by JB (matches the Slack bot name).
 
    All four names are confirmed. A wrong name would fail loudly at the broker's `toAgent` match, never misroute silently.
 3. **`/etc/cto-relay/fetch-keys.conf` — `VAULT_GET`** (C2-FU-1).
    - **The interface is fixed.** One argument (the vault label). It reads the machine token from the file in `$VAULT_TOKEN_FILE` (`/etc/cto-relay/vault-token`) and prints only the value on stdout.
    - **The concrete command string is TO RECORD.** It is not in PLAN-v7, the setup RUNBOOK, or this repo, and no Secure Vault CLI exists in the workspace to check one against, so it is not guessed here.
    - **Procedure:**
-     1. Muse CTO creates the `vault-cli-machine` machine token in the Secure Vault web UI (D7 hook bootstrap).
+     1. Muse CAO creates the `vault-cli-machine` machine token in the Secure Vault web UI (D7 hook bootstrap).
      2. `sudo deploy/scripts/deploy.sh --vault-token-stdin` writes it to `/etc/cto-relay/vault-token` (mode 0400, owner root).
-     3. Muse CTO records the Secure Vault's CLI fetch command in `VAULT_GET`.
+     3. Muse CAO records the Secure Vault's CLI fetch command in `VAULT_GET`.
      4. Check it by hand once: `sudo VAULT_TOKEN_FILE=/etc/cto-relay/vault-token <command> cto-relay-muse > /dev/null && echo ok`. Never print the value.
 
      The fetch hook refuses to run (exit 78) while `VAULT_GET` is a placeholder.
@@ -85,7 +85,7 @@ Fill these in. Do not guess them. Every value below either has its real value he
    | `cto-relay-<cto>-slack-bot` | OAuth & Permissions → Bot User OAuth Token |
 
    `<cto>` is one of `muse`, `claude`, `gemini`, `axon-hermes`. The brain key label is `cto-relay-muse` (stored, Phase 1).
-5. **Vault deploy keys — named** (C2-FU-2, C2-FU-3). Owner: Muse CTO. Both are created on the vault repo, GitHub → Settings → Deploy keys.
+5. **Vault deploy keys — named** (C2-FU-2, C2-FU-3). Owner: Muse CAO. Both are created on the vault repo, GitHub → Settings → Deploy keys.
 
    | Label | Type | Used by | How it reaches the host |
    |---|---|---|---|
@@ -108,7 +108,7 @@ Fill these in. Do not guess them. Every value below either has its real value he
 ## 3. Deploy steps (VM)
 
 ```bash
-sudo git clone https://github.com/northsideventuresllc-sketch/slack-cto-relay /srv/cto-relay-src
+sudo git clone https://github.com/northsideventuresllc-sketch/slack-cao-relay /srv/cto-relay-src
 ```
 ```bash
 cd /srv/cto-relay-src && sudo git checkout <COMMIT>
@@ -126,7 +126,7 @@ The deploy script does the following:
 Then:
 
 1. **Update `cto-relay-expected.json` in the vault** with the printed `{commit, configHash}`. Every deploy must do this; the mini sync checks it.
-2. Add Muse CTO's main-chat user to `cto-relay-admin` (control sockets):
+2. Add Muse CAO's main-chat user to `cto-relay-admin` (control sockets):
    ```bash
    sudo usermod -a -G cto-relay-admin <MUSE_CTO_USER>
    ```
@@ -149,7 +149,7 @@ Then:
    for p in 9101 9102 9103 9104; do curl -s -o /dev/null -w "%{http_code}\n" http://198.19.0.2:$p/health; done
    ```
    Each must show `"ok":true`, `lease.state":"held"`, latency numbers, and `adapter`.
-6. Run the membership check (D1) on all five channels: zero humans and zero non-CTO bots.
+6. Run the membership check (D1) on all five channels: zero humans and zero non-CAO bots.
 
 ### Startup order inside one program (fail-closed)
 1. Config: refuse if placeholders remain.
@@ -158,7 +158,7 @@ Then:
 4. Muse only: start the broker.
 5. Lease: acquire with epoch+1. If it is held by another live holder, refuse.
 6. Journal load and queue rebuild.
-7. Slack `auth.test`. A bad token fails closed for this CTO only.
+7. Slack `auth.test`. A bad token fails closed for this CAO only.
 8. Health bind on localhost and the LAN address.
 9. Control socket.
 10. Restore and reconciler.
@@ -170,12 +170,12 @@ Then:
 ## 4. The four systemd service files
 
 They live in `deploy/systemd/`: `cto-relay-muse.service`, `cto-relay-claude.service`, `cto-relay-gemini.service`, `cto-relay-axon-hermes.service`. All four share one shape. They differ only in these ways:
-- the CTO name, user and paths;
-- Muse's `SupplementaryGroups` (it hands each broker socket to that CTO's group);
+- the CAO name, user and paths;
+- Muse's `SupplementaryGroups` (it hands each broker socket to that CAO's group);
 - the other three have `After=`/`Wants=cto-relay-muse.service`, because they reach the brain through Muse.
 
 What every unit sets:
-- `User=`/`Group=` set to the per-CTO service user.
+- `User=`/`Group=` set to the per-CAO service user.
 - `ExecStartPre=+/usr/local/bin/cto-relay-fetch-keys <cto>`: a fresh vault fetch on every start, run as root.
 - `ExecStopPost=+/usr/local/bin/cto-relay-fetch-keys --wipe <cto>`: wipes the tmpfs keys.
 - `Environment=CTO_RELAY_KEY_DIR=/run/credentials/cto-relay-<cto>`.
@@ -236,33 +236,33 @@ The running process reads the keys from the tmpfs files that ExecStartPre wrote 
 **A lost key is rotated, never recovered.**
 
 ### Revocation test (Phase 2 exit)
-1. Revoke one CTO's bot token in Slack, for example Claude.
+1. Revoke one CAO's bot token in Slack, for example Claude.
 2. Within about a minute:
    - `cto-relay-claude` exits 78 and stays down.
-   - The alert reaches Muse CTO: an `agent_comms` row to MUSE with code `cto-relay-alert`, plus `alerts.jsonl`.
-   - After 3 failed health polls, the Muse program posts "Claude CTO relay is down. Starts for Claude CTO are paused. Muse CTO has been told." in #cto-bots. That is the visible failure.
+   - The alert reaches Muse CAO: an `agent_comms` row to MUSE with code `cto-relay-alert`, plus `alerts.jsonl`.
+   - After 3 failed health polls, the Muse program posts "Claude CAO relay is down. Starts for Claude CAO are paused. Muse CAO has been told." in #cto-bots. That is the visible failure.
    - The other three keep working.
 3. Restore: new token into the vault, then:
    ```bash
    sudo systemctl restart cto-relay-claude
    ```
-   The Muse program posts "Claude CTO relay is back."
+   The Muse program posts "Claude CAO relay is back."
 
 ---
 
-## 6. Muse CTO operations
+## 6. Muse CAO operations
 
-### Starting a CTO for JB (D4 "the one route for JB")
-JB asks in main chat. Muse CTO appends a `fire` entry to the post-queue as `cto-relay-muse` (the file is owner `cto-relay-muse`, mode 0600):
+### Starting a CAO for JB (D4 "the one route for JB")
+JB asks in main chat. Muse CAO appends a `fire` entry to the post-queue as `cto-relay-muse` (the file is owner `cto-relay-muse`, mode 0600):
 ```bash
 sudo -u cto-relay-muse /usr/local/bin/cto-relay post-queue-append --kind fire --cto claude --task "Build the Match Fit email groups"
 ```
 - **For Muse:** the Muse program feeds its own fire path; it is Muse's single parser.
 - **For another CTO:** the Muse program posts `@<CTO> fire: <task>` as the Muse CTO bot in that CTO's channel. Only that CTO's program receives the `app_mention`, so exactly one run starts there.
 
-### Posting Muse CTO's own words (an ordinary post that can never start work)
+### Posting Muse CAO's own words (an ordinary post that can never start work)
 ```bash
-sudo -u cto-relay-muse /usr/local/bin/cto-relay post-queue-append --kind post --channel cto-bots --text "@Claude CTO — Need your call on the Match Fit email groups before we send."
+sudo -u cto-relay-muse /usr/local/bin/cto-relay post-queue-append --kind post --channel cto-bots --text "@Claude CAO — Need your call on the Match Fit email groups before we send."
 ```
 - Channels: `cto-bots`, `cto-muse`, `cto-claude`, `cto-gemini`, `cto-axon-hermes`.
 - The poster turns plain names into real mentions. It strips any mention + `fire:` + task. It blocks the whole post on any blocklist hit; the block is logged and never posted.
@@ -271,13 +271,13 @@ sudo -u cto-relay-muse /usr/local/bin/cto-relay post-queue-append --kind post --
 ### The manual state machine (Claude, Gemini, AXON-Hermes) — control commands
 Run as a member of `cto-relay-admin`:
 ```bash
-cto-relay admin claim   --cto claude --fire-id <FIRE_ID> --name "Muse CTO"
+cto-relay admin claim   --cto claude --fire-id <FIRE_ID> --name "Muse CAO"
 ```
 ```bash
 cto-relay admin start   --cto claude --fire-id <FIRE_ID>
 ```
 ```bash
-cto-relay admin link    --cto claude --fire-id <FIRE_ID> --link "<run link in the D4 per-CTO form>"
+cto-relay admin link    --cto claude --fire-id <FIRE_ID> --link "<run link in the D4 per-CAO form>"
 ```
 ```bash
 cto-relay admin closeout --cto claude --fire-id <FIRE_ID> --vault-log-path "<path in vault>.md" --tokens <N> --minutes <N>
@@ -288,17 +288,17 @@ cto-relay admin stopped --cto claude --fire-id <FIRE_ID>
 ```bash
 cto-relay admin review-clear --cto claude
 ```
-- `claim` is Muse CTO's pre-start check. The program refuses the claim if an abort was journaled first (`abort-won`), if the fire is already claimed, or if another run of the same task is claimed (`duplicate-run`). Start the work only after `claim` returns `ok`.
+- `claim` is Muse CAO's pre-start check. The program refuses the claim if an abort was journaled first (`abort-won`), if the fire is already claimed, or if another run of the same task is claimed (`duplicate-run`). Start the work only after `claim` returns `ok`.
 - `stopped` is used after a stop request: an abort that came after the claim.
 - `review-clear` is the Monday review. It clears an overrun block.
 - Gemini's "link" is the mini session name plus the Slack thread, as free text.
 - `--tokens` is omitted when the harness gives no count; the close-out then records "unmetered".
-- Status values written into the brain row: the relay writes `queued`, `linked`, `closed`, `failed`, `expired`, `refused`, `cancelled`; Muse CTO writes `claimed` and `started` through the commands.
+- Status values written into the brain row: the relay writes `queued`, `linked`, `closed`, `failed`, `expired`, `refused`, `cancelled`; Muse CAO writes `claimed` and `started` through the commands.
 
 ### When a start fails before it reaches the adapter (R7-NEW-3)
 1. The program retries the event in-process: 5 attempts with the 1/2/4/8 s backoff.
 2. After 5 failed attempts, a start-pattern event is never quarantined. It gets:
-   - the reply "Could not start this. Muse CTO has been told. One more try in 1 hour.";
+   - the reply "Could not start this. Muse CAO has been told. One more try in 1 hour.";
    - an alert;
    - one retry an hour later.
 3. **Where the retry's content comes from:** the event itself, held **in memory** for that hour. Quarantine, the journal and the run log hold no text.
@@ -307,7 +307,7 @@ cto-relay admin review-clear --cto claude
 
 ### Muse automatic — the mailbox drain contract
 The drain is outside this repo (C2-FU-6):
-- **Owner:** Muse CTO, as part of its main-chat harness (the MUSE mailbox drain).
+- **Owner:** Muse CAO, as part of its main-chat harness (the MUSE mailbox drain).
 - **Host:** this VM, the same host as the relay and the `cto-heartbeat` cron.
 - **Schedule:** every **30 minutes** (D4). That is the Muse fire-to-start time, and the relay's 35-minute link window is sized to it.
 - **Run link form:** `https://muse.ai/chat/<run-id>`, the form PLAN-v7 D4 names. The Phase 1 record has no live check of it, so **verify it on the first Phase 5 Muse start.** The relay posts whatever URL the drain writes; it never builds the link itself.
@@ -322,14 +322,14 @@ It must follow these rules:
   `{"has":false}` means skip. The reconciler marks such a row `failed` and tells the requester.
 - **On pickup:** set `status` to `claimed`, then `started`. Write the run link into `evidence.relay.run_chat_url`. Do the update read-modify-write, guarded by `evidence.relay.v`, and bump `v` by 1.
 - **What the relay does next:** it checks its rows every 5 minutes and posts `Run: <link>` when the link appears. With no link 35 minutes after the start, it posts a visible failure and alerts.
-- Rows with `code = 'cto-relay-alert'` are alerts to Muse CTO, not starts.
+- Rows with `code = 'cto-relay-alert'` are alerts to Muse CAO, not starts.
 
 ### What each start writes to `agent_comms` (real columns only)
 | Column | Value |
 |---|---|
-| `to_agent` | the CTO's agent name from the registry (`MUSE`, `Claude CTO`, `Gemini CTO`, `AXON-Hermes CTO`) |
-| `from_agent` | the requesting CTO bot's agent name |
-| `from_harness` / `to_harness` | `cto-relay` / the CTO key |
+| `to_agent` | the CAO's agent name from the registry (`MUSE`, `Claude CAO`, `Gemini CAO`, `AXON-Hermes CAO`) |
+| `from_agent` | the requesting CAO bot's agent name |
+| `from_harness` / `to_harness` | `cto-relay` / the CAO key |
 | `channel` | `slack` |
 | `subject` | `Start for <CTO>` |
 | `body` | the task text. The brain row is the content record, kept 90 days, then archived to the vault. |
@@ -344,14 +344,14 @@ It must follow these rules:
 
 ## 7. Close-out (D5)
 
-1. The CTO files a session log in the vault apartments.
+1. The CAO files a session log in the vault apartments.
    - It must have `## Decided`, `## Why`, `## What failed`, `## Reusable`, and `## Open items` (each item with `Owner: <name>`).
    - **Gemini, or any Session pointer that is not a link (R7-NEW-7):** add a `## Session` section that carries the pointer word for word, for example `mini session gem-42 + Slack thread`. Slack history goes after a year, so the vault log is the durable copy. The relay refuses to post the map until the read-back log contains it. The map's Session line then reads `<pointer> (filed in the log: <vault path>)`.
    - Put a `.sha256` sidecar next to it, holding the hex SHA-256 of the file's bytes (`sha256sum` output is fine).
    - Commit and push.
-2. Muse CTO runs `cto-relay admin closeout …` for that CTO.
+2. Muse CAO runs `cto-relay admin closeout …` for that CAO.
 3. The program fetches the vault and reads the file back from `origin/main`. It hashes the bytes and compares the hash to the sidecar. Only on a match does it post:
-   - The map in the CTO's own channel:
+   - The map in the CAO's own channel:
      ```
      Done: <first Decided line, 20 words or fewer>
      Log: <link>
@@ -360,13 +360,13 @@ It must follow these rules:
      ```
      followed by the four tags.
    - The pointer in #cto-bots: `Close-out: <outcome>. Map is here: <map message link>` plus the four tags.
-4. **No read-back means nothing is posted.** The map waits in `outbox/`. Retries run every 5 min × 12, then hourly × 24, TTL 7 days, and Muse CTO is alerted. A corrupt outbox entry is rebuilt from the journal plus the brain row's close-out request.
+4. **No read-back means nothing is posted.** The map waits in `outbox/`. Retries run every 5 min × 12, then hourly × 24, TTL 7 days, and Muse CAO is alerted. A corrupt outbox entry is rebuilt from the journal plus the brain row's close-out request.
 5. On a successful post, the program:
    - writes the journal `closed` record (close-out key, kept 90 days);
    - sets the row to `closed`;
-   - writes the cost line (CTO, task hash, home, tokens, minutes);
-   - flags an overrun if tokens are over 25,000. The next start for that CTO is then refused until `review-clear`.
-6. A map link that does not open is not done. Muse CTO re-issues it within a day and logs the re-issue.
+   - writes the cost line (CAO, task hash, home, tokens, minutes);
+   - flags an overrun if tokens are over 25,000. The next start for that CAO is then refused until `review-clear`.
+6. A map link that does not open is not done. Muse CAO re-issues it within a day and logs the re-issue.
 
 ---
 
@@ -380,18 +380,18 @@ It is a 1-minute cron on the mini:
 It runs as user `cto-relay-muse`. The secrets come from that user's keychain and reach the poller on stdin only.
 - **What it checks:** it curls `http://198.19.0.2:9101..9104/health` and reads the `cto_heartbeat` row for MUSE.
 - **Offline:** the heartbeat is older than 30 min, or the brain is down (fail-safe).
-- **Alert at 45 min:** an `agent_comms` row to `Claude CTO`. If the brain is down, it writes `/var/lib/cto-relay/mini/alerts.jsonl` instead, which Claude CTO reads at the morning check-in.
-- **Failover detected:** the VM Muse health fails 3 consecutive polls AND Muse CTO is offline. The poller sends the failover row to `Claude CTO` once.
+- **Alert at 45 min:** an `agent_comms` row to `Claude CAO`. If the brain is down, it writes `/var/lib/cto-relay/mini/alerts.jsonl` instead, which Claude CAO reads at the morning check-in.
+- **Failover detected:** the VM Muse health fails 3 consecutive polls AND Muse CAO is offline. The poller sends the failover row to `Claude CAO` once.
 - **Dead-owner sweep (R7-NEW-4):** while the Muse program is down, the poller runs the D5 §6 sweep every 6 h with the **reduced** still-active test: prongs (b) + (c) only. Prong (a) is skipped, because the mini has no adapter to probe and no v1 adapter has a live probe anyway.
-  - (b) reads the last 24 h of Slack history in the four CTO channels from `config/registry.json`. It uses the Muse CTO bot token (`channels:history` / `groups:history`) from the `cto-relay-muse` login keychain, keychain item `cto-relay-muse-slack-bot`.
+  - (b) reads the last 24 h of Slack history in the four CAO channels from `config/registry.json`. It uses the Muse CAO bot token (`channels:history` / `groups:history`) from the `cto-relay-muse` login keychain, keychain item `cto-relay-muse-slack-bot`.
 
 **Mini keychain items** (C1-FU-3) are created at failover setup in each `cto-relay-<cto>` macOS user's login keychain, with the same names as the vault labels: `cto-relay-<cto>-slack-app`, `cto-relay-<cto>-slack-bot`, and, Muse only, `cto-relay-muse` (the brain key).
   - (c) reads `evidence.relay.last_progress_at` from the **live** brain rows, not from the up-to-24-hours-stale off-host run-log copy.
-  - Findings go to `Claude CTO`, labelled "reduced test: prongs b+c". The fallback never posts in Slack.
+  - Findings go to `Claude CAO`, labelled "reduced test: prongs b+c". The fallback never posts in Slack.
 - **The poller's own liveness (R7-NEW-5):** every run writes a `cto_heartbeat` row for agent `MINI-POLLER`. The VM Muse program checks it every minute. If it is stale for over 5 min, it alerts and posts "The mini poller has stopped answering…" in #cto-bots, once per incident, then "The mini poller is back." on recovery.
 
-### The dead-alerter fallback — Claude CTO's 9am check-in (R7-NEW-5)
-**Who notices.** An offline Muse CTO cannot notice its own stale heartbeat. So the noticer is **Claude CTO, at its own daily 9am check-in**.
+### The dead-alerter fallback — Claude CAO's 9am check-in (R7-NEW-5)
+**Who notices.** An offline Muse CAO cannot notice its own stale heartbeat. So the noticer is **Claude CAO, at its own daily 9am check-in**.
 
 **What it runs**, on the mini as `cto-relay-muse` (directly, or `ssh <MINI_SSH_DEST> …`):
 ```bash
@@ -399,7 +399,7 @@ It runs as user `cto-relay-muse`. The secrets come from that user's keychain and
 ```
 
 **What it shows:**
-- Muse CTO's heartbeat age (OFFLINE past 30 min, so take the manual starts);
+- Muse CAO's heartbeat age (OFFLINE past 30 min, so take the manual starts);
 - the mini poller's heartbeat age (POLLER DOWN past 5 min, so restart its cron);
 - every alert in `/var/lib/cto-relay/mini/alerts.jsonl` not yet shown.
 
@@ -431,10 +431,10 @@ The report records its read position, so each alert is shown once. `alerts.jsonl
    - Each `claimed`/`started` row gets its current state.
    - Journal-orphan rows are marked `failed`.
 5. **Hand back.** Stop the mini relays (`launchctl bootout system/com.northside.cto-relay.<cto>`), then start the VM services. They acquire epoch+1.
-6. **Prove one live program per CTO:** exactly one `lease.state":"held"` per CTO across VM and mini.
+6. **Prove one live program per CAO:** exactly one `lease.state":"held"` per CAO across VM and mini.
 
 ### Mini isolation
-Each program runs as its own macOS user (`cto-relay-<cto>`) with its own login keychain. If macOS users cannot be created, use per-CTO keychains with ACLs and **record that here**; never silently.
+Each program runs as its own macOS user (`cto-relay-<cto>`) with its own login keychain. If macOS users cannot be created, use per-CAO keychains with ACLs and **record that here**; never silently.
 
 ---
 
@@ -449,7 +449,7 @@ Each program runs as its own macOS user (`cto-relay-<cto>`) with its own login k
   6. Commits and pushes.
 
   On any failure it writes a capped alert for the 9am check-in.
-- **Mirror (R7-FU-11):** the relay host files it within a day, through the job above. Muse CTO's weekly job is the mirror **check** (thread links + a secrets sample), not the filing.
+- **Mirror (R7-FU-11):** the relay host files it within a day, through the job above. Muse CAO's weekly job is the mirror **check** (thread links + a secrets sample), not the filing.
 - **Retrieval test:** include the archive folder (`$VAULT_ARCHIVE_PATH`) in the vault search, so starts older than 90 days stay findable (R7-FU-12).
 - **Restore drill**, monthly (first Monday):
   1. On a scratch host or the mini, place a copy's `journal.jsonl` into an empty state dir.
@@ -461,7 +461,7 @@ Each program runs as its own macOS user (`cto-relay-<cto>`) with its own login k
 
 ## 10. Blocklist (canonical copy — must match `config/blocklist.json`)
 
-Owner: Muse CTO. Reviewed monthly.
+Owner: Muse CAO. Reviewed monthly.
 
 **Key patterns:**
 - `xox[baprs]-…`
@@ -483,7 +483,7 @@ Owner: Muse CTO. Reviewed monthly.
 - money amounts (`$1,200`)
 
 **What a hit does:**
-- **Post-queue text (CTO words):** the whole post is blocked and logged, never posted.
+- **Post-queue text (CAO words):** the whole post is blocked and logged, never posted.
 - **Relay templates that carry task text:** the task part is redacted, so the 3-second reply still goes out.
 - **Audit snippets and mirror entries:** redacted.
 
@@ -499,13 +499,13 @@ Coordination notes (strategy discussion, open items, decisions) are not blocked.
 | Every 5 min | own brain rows: claims, starts, run links, cancels, lock clears | each program |
 | Every 30 min | reconciler (lost starts, journal orphans) | each program |
 | Every minute | mini poller heartbeat watch (`MINI-POLLER`, stale over 5 min) | Muse program |
-| Every 6 h | close-out sweep. A run silent 6 h is flagged by the **first sweep after** 6 h of silence, so 6–12 h after its last activity (R7-NEW-1). The stalled warning is posted to the CTO's channel at once and listed again at 9am. Unclosed means over 24 h. | Muse program |
-| 9:00 local | pending starts in each CTO channel; Muse: clear stalled locks, sweep, daily open in #cto-bots | each program / Muse |
+| Every 6 h | close-out sweep. A run silent 6 h is flagged by the **first sweep after** 6 h of silence, so 6–12 h after its last activity (R7-NEW-1). The stalled warning is posted to the CAO's channel at once and listed again at 9am. Unclosed means over 24 h. | Muse program |
+| 9:00 local | pending starts in each CAO channel; Muse: clear stalled locks, sweep, daily open in #cto-bots | each program / Muse |
 | 03:00 local | journal compaction (dedup entries > 24 h, close-out keys > 90 days), run-log/audit/quarantine retention | each program |
 | Every 15 min | `cto-heartbeat` | VM timer |
-| Monday | weekly cost line (fired-run tokens + review tokens ≤ 50,000), meter check, mirror check, membership audit, quarantine review, `review-clear` if due | Muse CTO |
-| Weekly | file `mirror/cto-loop-mirror-<Monday>.md` into the vault | Muse CTO |
-| First Monday | Slack export test, restore drill | Muse CTO |
+| Monday | weekly cost line (fired-run tokens + review tokens ≤ 50,000), meter check, mirror check, membership audit, quarantine review, `review-clear` if due | Muse CAO |
+| Weekly | file `mirror/cto-loop-mirror-<Monday>.md` into the vault | Muse CAO |
+| First Monday | Slack export test, restore drill | Muse CAO |
 
 ---
 
@@ -513,8 +513,8 @@ Coordination notes (strategy discussion, open items, decisions) are not blocked.
 
 A run is **still active** if any of these holds:
 - **(a)** The adapter's `status(runId)` reports it live. This counts **only for an adapter with a real live probe** (`liveStatus: true`). **No v1 adapter has one.** Muse and the three manual adapters all read the stored brain row, so in v1 prong (a) does not apply.
-- **(b)** The CTO's channel has a message from that CTO in the last 6 h. Relay templates do not count.
-- **(c)** The run is under way (`claimed`/`started`/`linked`) and its last state-changing entry by the CTO's own adapter is under 6 h old.
+- **(b)** The CAO's channel has a message from that CAO in the last 6 h. Relay templates do not count.
+- **(c)** The run is under way (`claimed`/`started`/`linked`) and its last state-changing entry by the CAO's own adapter is under 6 h old.
 
 **Stalled** means not still active, which in v1 means no (b) and no (c) activity for 6 h. D5's "fails all three for 6 hours" and §6's "no activity for 6 hours" are the same test here.
 
@@ -539,15 +539,15 @@ A run is **still active** if any of these holds:
 
 ## 12. Kill switch
 
-**Measured, not counted by hand (ECO-FU-3).** Every Monday at the 9am check-in, the Muse program writes the week's line to `/var/lib/cto-relay/muse/weekly-review.jsonl` and alerts Muse CTO with the numbers. The line holds:
-- starts total and per CTO (brain rows);
+**Measured, not counted by hand (ECO-FU-3).** Every Monday at the 9am check-in, the Muse program writes the week's line to `/var/lib/cto-relay/muse/weekly-review.jsonl` and alerts Muse CAO with the numbers. The line holds:
+- starts total and per CAO (brain rows);
 - fired-run tokens reported at close-out, plus how many runs were unmetered;
 - the weekly share of the 600,000-token ceiling;
 - whether the week was below the floor of 5.
 
-When the total stays below 5 for two reviews in a row and did not rise, it raises **`kill-switch-condition-met`**. Muse CTO then decides.
+When the total stays below 5 for two reviews in a row and did not rise, it raises **`kill-switch-condition-met`**. Muse CAO then decides.
 
-Review tokens (≤ 50,000 a week) are Muse CTO's own harness spend. They are recorded as `null` in the line and filled in at the review. Every start also leaves a cost line, including starts that never closed: those are 0 tokens if the start never ran, unmetered if it ran (ECO-FU-2).
+Review tokens (≤ 50,000 a week) are Muse CAO's own harness spend. They are recorded as `null` in the line and filled in at the review. Every start also leaves a cost line, including starts that never closed: those are 0 tokens if the start never ran, unmetered if it ran (ECO-FU-2).
 
 **Pause.** If starts per week stay below 5 for two reviews in a row and the trend is flat:
 1. Run:
@@ -589,7 +589,7 @@ At measure time, `/` was **already under 10 GB (7.0 GB free)**. The relay's stat
 | Journal failure → no run | `CTO_RELAY_ENABLE_TEST_HOOKS=1` on a test unit, then `cto-relay admin test-fail-next-journal-write --cto muse`, then fire. The row is voided (`refused`), "Not started." is posted, no run starts | `test/core.test.ts` "journal-failure test" |
 | VM headroom | **Recorded — measured live 2026-11-05 19:22 EST** (see below) | — |
 | Paid-host price | **Recorded — none.** The relay runs on this VM; there is no paid host and no paid-host price to pay. | — |
-| Solo rebuild | Claude CTO rebuilds from this runbook alone within 2 h; smoke test passes | — |
+| Solo rebuild | Claude CAO rebuilds from this runbook alone within 2 h; smoke test passes | — |
 
 Local checks, run in the repo:
 ```bash

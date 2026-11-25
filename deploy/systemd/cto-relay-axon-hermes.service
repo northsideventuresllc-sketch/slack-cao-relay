@@ -1,5 +1,5 @@
 # /etc/systemd/system/cto-relay-axon-hermes.service
-# Slack CTO Loop relay — AXON-Hermes CTO. One of four separate services (PLAN-v7 D6):
+# Slack CAO Loop relay — AXON-Hermes CAO. One of four separate services (PLAN-v7 D6):
 # shared code, separate process, separate service user, separate keys, queue and journal.
 #
 # Keys (D7): ExecStartPre runs /usr/local/bin/cto-relay-fetch-keys axon-hermes as root on EVERY
@@ -11,7 +11,7 @@
 # No key value ever appears in this file.
 
 [Unit]
-Description=Slack CTO Loop relay — AXON-Hermes CTO
+Description=Slack CAO Loop relay — AXON-Hermes CAO
 Documentation=file:///opt/cto-relay/docs/RELAY-RUNBOOK.md
 After=network-online.target cto-relay-muse.service
 Wants=network-online.target cto-relay-muse.service

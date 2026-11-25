@@ -1,4 +1,4 @@
-// One relay program = one CTO. Wires the D6 layers:
+// One relay program = one CAO. Wires the D6 layers:
 //   slack-transport → router → harness-adapters + poster → run-log
 // Fail-closed at startup: no brain → no lease → refuse to start.
 // R7-FU-23: so after a restart during a brain outage, restore + the reconciler
@@ -171,7 +171,7 @@ export class RelayProgram {
     } catch (err) {
       if (err instanceof Fatal) throw err;
       alert('token-revoked-or-invalid');
-      throw new Fatal(EXIT_STAY_DOWN, 'Slack bot token rejected (fails closed for this CTO only)');
+      throw new Fatal(EXIT_STAY_DOWN, 'Slack bot token rejected (fails closed for this CAO only)');
     }
 
     const poster = new Poster(slack, lease, blocklist, cfg.registry.ctos, runlog, this.log, alert);
@@ -335,7 +335,7 @@ export class RelayProgram {
     }
   }
 
-  /** Muse post-queue entries: Muse CTO's own words, or a start relayed for JB. */
+  /** Muse post-queue entries: Muse CAO's own words, or a start relayed for JB. */
   private async postQueueEntry(e: PostQueueEntry, core: RelayCore, poster: Poster): Promise<void> {
     const reg = this.cfg.registry;
     if (e.kind === 'post') {
@@ -365,8 +365,8 @@ export class RelayProgram {
       });
       return;
     }
-    // Another CTO: post the explicit start pattern as the Muse CTO bot in that CTO's channel.
-    // Only that CTO's program receives the app_mention, so exactly one run starts there.
+    // Another CAO: post the explicit start pattern as the Muse CAO bot in that CAO's channel.
+    // Only that CAO's program receives the app_mention, so exactly one run starts there.
     // Through the poster: live lease fence, backoff, and an alert on any refusal (C1-FU-7).
     const task = e.task.replace(/\s+/g, ' ').trim().replace(/<[@!#][^>]*>/g, '');
     await poster.postStartRelay(target.channelId, target.botUserId, task);

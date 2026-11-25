@@ -4,14 +4,14 @@
 # 2. Writes per-file .sha256 next to each copy and the day's checksum file
 #    backups/<date>.sha256 in the vault repo (checksum store, D6).
 # 3. Hygiene check: verifies the copies on the mini (checksum + record count)
-#    and alerts Muse CTO on failure (alert file read by the 9am check-in).
+#    and alerts Muse CAO on failure (alert file read by the 9am check-in).
 # 4. Copy vs brain (R5-FU-9): `cto-relay copy-check` hands each journal copy's
 #    fire ids to the Muse program, which compares them with the brain rows and
 #    posts any gap in #cto-bots.
 # 5. Files the Muse mirror (R7-FU-11) and the 90-day brain-row archive
 #    (R7-FU-12) into the vault within a day: $VAULT_MIRROR_PATH, $VAULT_ARCHIVE_PATH.
 # C2-FU-10: no `set -e` — every step is checked, so one failure is alerted and the
-# other CTOs are still copied; an unexpected error trips the ERR trap, which alerts.
+# other CAOs are still copied; an unexpected error trips the ERR trap, which alerts.
 set -uo pipefail
 : "${MINI_SSH_DEST:?}" "${MINI_SSH_KEY:?}" "${MINI_STATE_ROOT:?}" "${VAULT_DIR:?}" "${VAULT_MIRROR_PATH:?}" "${VAULT_ARCHIVE_PATH:?}"
 case "$MINI_SSH_DEST$VAULT_DIR$VAULT_MIRROR_PATH$VAULT_ARCHIVE_PATH" in *"<"*) echo "offhost.env has placeholders" >&2; exit 78 ;; esac

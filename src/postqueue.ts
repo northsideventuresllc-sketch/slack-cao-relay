@@ -1,7 +1,7 @@
 // Post-queue file layout (R7-FU-7): v1 has exactly ONE post-queue file, the
 // Muse one below. The Claude, Gemini and AXON-Hermes programs have no
-// post-queue file: off-VM CTOs cannot write to this VM (D2 v1 note), so their
-// words reach Slack through Muse CTO, i.e. this file. Their programs' `message`
+// post-queue file: off-VM CAOs cannot write to this VM (D2 v1 note), so their
+// words reach Slack through Muse CAO, i.e. this file. Their programs' `message`
 // events feed only abort parsing; the Muse program's `message` events also feed
 // the mirror writer. The v2 route is a brain post-queue table (D2).
 //
@@ -11,12 +11,12 @@
 // Muse relay program (rename + create new), never truncated in place.
 //
 // Entry kinds:
-//   {"kind":"post","channel":"cto-bots"|"cto-muse"|…,"text":"…"} — Muse CTO's own words:
+//   {"kind":"post","channel":"cto-bots"|"cto-muse"|…,"text":"…"} — Muse CAO's own words:
 //       an ordinary post; the poster strips the start pattern; it can never start work.
 //   {"kind":"fire","cto":"muse"|"claude"|"gemini"|"axon-hermes","task":"…"} — JB's start,
-//       relayed by Muse CTO (D4: "Muse CTO relays the start into Slack as the Muse CTO bot").
-//       For muse: fed to this program's own fire parser path. For another CTO: posted as
-//       the explicit start pattern in that CTO's channel, so ONLY that CTO's program parses
+//       relayed by Muse CAO (D4: "Muse CAO relays the start into Slack as the Muse CAO bot").
+//       For muse: fed to this program's own fire parser path. For another CAO: posted as
+//       the explicit start pattern in that CAO's channel, so ONLY that CAO's program parses
 //       it (single-parser rule) and exactly one run starts.
 
 import { closeSync, existsSync, openSync, readSync, renameSync, statSync, unlinkSync, readdirSync, constants, fstatSync } from 'node:fs';
@@ -39,7 +39,7 @@ export type PostQueueEntry = z.infer<typeof PostQueueEntrySchema>;
 const OffsetSchema = z.object({ file: z.string(), ino: z.number(), offset: z.number().int().nonnegative(), createdAt: z.string() });
 
 /**
- * Append helper for Muse CTO's writer (run as cto-relay-muse). R7-FU-6: it
+ * Append helper for Muse CAO's writer (run as cto-relay-muse). R7-FU-6: it
  * opens the file by path on EVERY write (O_APPEND|O_CREAT, then close), so a
  * write after the program's rename lands in the new file; it retries once on
  * ENOENT (directory briefly missing). A write that opened just before the rename

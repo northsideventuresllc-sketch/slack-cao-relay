@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // cto-relay CLI.
 //   cto-relay run                         one relay program (CTO from CTO_RELAY_CTO)
-//   cto-relay heartbeat                   write Muse CTO's cto_heartbeat row (cron cto-heartbeat)
+//   cto-relay heartbeat                   write Muse CAO's cto_heartbeat row (cron cto-heartbeat)
 //   cto-relay poller                      the mini poller (1-minute cron on the mini; secrets on stdin)
-//   cto-relay checkin-report              Claude CTO's 9am check-in report on the mini (brain key on stdin)
+//   cto-relay checkin-report              Claude CAO's 9am check-in report on the mini (brain key on stdin)
 //   cto-relay admin <cmd> --cto <cto> …   control socket: claim | start | link | stopped | closeout | review-clear | journal-has | status
 //   cto-relay post-queue-append …         append one validated entry to the Muse post-queue (run as cto-relay-muse)
 

@@ -1,9 +1,9 @@
 // `cto-relay checkin-report` — R7-NEW-5: the dead-alerter fallback, named.
-// Claude CTO runs this at ITS OWN daily 9am check-in (not Muse CTO's — an
-// offline Muse CTO cannot notice its own stale heartbeat). Run on the mini as
+// Claude CAO runs this at ITS OWN daily 9am check-in (not Muse CAO's — an
+// offline Muse CAO cannot notice its own stale heartbeat). Run on the mini as
 // user cto-relay-muse via deploy/scripts/mini-checkin.sh (brain key on stdin).
 // It reports, in plain lines:
-//   - Muse CTO's heartbeat age (offline over 30 minutes),
+//   - Muse CAO's heartbeat age (offline over 30 minutes),
 //   - the mini poller's heartbeat age (the poller itself down → the dead alerter),
 //   - every alert in /var/lib/cto-relay/mini/alerts.jsonl not yet shown, then
 //     records the read position so each alert is shown once.
@@ -42,7 +42,7 @@ export async function checkinReport(env: NodeJS.ProcessEnv = process.env, out: (
   };
   const muse = await age('MUSE');
   const poller = await age(POLLER_AGENT);
-  out(`Muse CTO heartbeat: ${formatAge(muse)}${muse === null || muse > OFFLINE_DETECT_MS ? ' — OFFLINE: take the manual starts (runbook §6) and check failover (§8).' : ''}`);
+  out(`Muse CAO heartbeat: ${formatAge(muse)}${muse === null || muse > OFFLINE_DETECT_MS ? ' — OFFLINE: take the manual starts (runbook §6) and check failover (§8).' : ''}`);
   out(`Mini poller heartbeat: ${formatAge(poller)}${poller === null || poller > POLLER_STALE_MS ? ' — POLLER DOWN: restart its cron on the mini (runbook §8).' : ''}`);
   const alerts = join(dir, 'alerts.jsonl');
   const posFile = join(dir, 'alerts.read.json');

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mini-run.sh <cto> — start one relay on the mini (launchd). Keys are read from the
-# per-CTO macOS user's login keychain into a private temp dir (0700, removed on exit).
+# per-CAO macOS user's login keychain into a private temp dir (0700, removed on exit).
 # Keychain items (C1-FU-3), one login keychain per macOS user cto-relay-<cto>, created at failover setup
 # with the SAME names as the Secure Vault labels: cto-relay-<cto>-slack-app, cto-relay-<cto>-slack-bot,
 # and (Muse only) cto-relay-muse for the brain key.

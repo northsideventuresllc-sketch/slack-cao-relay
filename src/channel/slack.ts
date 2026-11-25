@@ -2,7 +2,7 @@
 // - Every envelope is acked on receipt (well inside Slack's 3-second window);
 //   the short reply is posted by the router right after.
 // - Socket Mode disconnect: reconnect with backoff 1s/2s/4s/8s/16s, max 5
-//   attempts, then the program stays down and alerts Muse CTO (D6).
+//   attempts, then the program stays down and alerts Muse CAO (D6).
 // - Unknown fields are ignored (Zod strips them); malformed events are dropped
 //   and logged by id only.
 
@@ -180,7 +180,7 @@ export class SlackChannel implements ChannelAdapter {
     return (res.messages ?? []).map((m) => ({ user: m.user ?? m.bot_profile?.user_id ?? null, text: m.text ?? '', ts: m.ts ?? '' }));
   }
 
-  /** Token check at start: an invalid or revoked token fails closed for this CTO only. */
+  /** Token check at start: an invalid or revoked token fails closed for this CAO only. */
   async authTest(): Promise<{ userId: string }> {
     const res = await this.web.auth.test();
     if (!res.user_id) throw Object.assign(new Error('auth.test returned no user'), { code: 'slack_auth' });

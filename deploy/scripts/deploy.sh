@@ -19,7 +19,7 @@ for c in $CTOS; do
   getent group "$u" >/dev/null || groupadd --system "$u"
   id "$u" >/dev/null 2>&1 || useradd --system --gid "$u" --home-dir "/var/lib/cto-relay/$c" --no-create-home --shell /usr/sbin/nologin "$u"
 done
-# Muse must be able to hand each broker socket to that CTO's group.
+# Muse must be able to hand each broker socket to that CAO's group.
 usermod -a -G cto-relay-admin,cto-relay-claude,cto-relay-gemini,cto-relay-axon-hermes cto-relay-muse
 for c in claude gemini axon-hermes; do usermod -a -G cto-relay-admin "cto-relay-$c"; done
 

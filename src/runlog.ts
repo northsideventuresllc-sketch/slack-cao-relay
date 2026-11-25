@@ -19,7 +19,7 @@ export interface RunLogEntry {
   kind: RunLogKind;
   fireId: string | null;
   cto: string;
-  writer: string; // "adapter:<cto>" for state-changing entries by the CTO's own adapter, else "relay"
+  writer: string; // "adapter:<cto>" for state-changing entries by the CAO's own adapter, else "relay"
   state?: string;
   sessionId?: string | null; // run-chat id/link; null until linked
   taskHash?: string;
@@ -58,12 +58,12 @@ export class RunLog {
     this.write({ kind: 'started', fireId, taskHash, sessionId: null, writer: `adapter:${adapterKey}`, state: 'started-entry', ...(fromProvisionalId ? { reason: `from:${fromProvisionalId}` } : {}) });
   }
 
-  /** A state-changing entry written by the CTO's own adapter (claim, start, link, close-out) — refreshes the lock (D4). */
+  /** A state-changing entry written by the CAO's own adapter (claim, start, link, close-out) — refreshes the lock (D4). */
   progress(fireId: string, state: string, adapterKey: string, sessionId?: string | null): void {
     this.write({ kind: state === 'linked' ? 'linked' : 'state', fireId, state, writer: `adapter:${adapterKey}`, sessionId: sessionId ?? null });
   }
 
-  /** One cost line per start (D4 cost envelope): CTO, task hash, home, tokens used, minutes taken. */
+  /** One cost line per start (D4 cost envelope): CAO, task hash, home, tokens used, minutes taken. */
   cost(fireId: string, taskHash: string, home: string, tokens: number | null, minutes: number | null): void {
     this.write({ kind: 'cost', fireId, taskHash, home, tokens, minutes, writer: 'relay' });
   }
@@ -83,7 +83,7 @@ export class RunLog {
     return readJsonLines(this.path).values as RunLogEntry[];
   }
 
-  /** Last state-changing entry written by this CTO's own adapter for a fire. */
+  /** Last state-changing entry written by this CAO's own adapter for a fire. */
   lastProgress(fireId: string): number | null {
     let last: number | null = null;
     for (const e of this.entries()) {

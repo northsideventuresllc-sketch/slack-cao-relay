@@ -1,7 +1,7 @@
 // Dedup precedence (D6): event dedup → idempotency key → task dedup.
 //   event dedup: event id; if absent, trigger id; if absent, channel + user + text hash + minute. 24-hour TTL.
-//   idempotency key: CTO + normalized task + minute bucket.
-//   task dedup: same CTO + normalized task within 30 minutes runs once.
+//   idempotency key: CAO + normalized task + minute bucket.
+//   task dedup: same CAO + normalized task within 30 minutes runs once.
 // State reloads from the journal's fire-request records on restart; keys are SHA-256 hashes.
 
 import type { JournalRecord } from './contracts.js';

@@ -1,13 +1,13 @@
 // The mini poller (D4/D6/D7): a 1-minute cron ON THE MINI.
 // - Curls the VM health endpoints (http://<vm-lan>:9101/health …9104).
-// - Offline rule: Muse CTO is offline when its cto_heartbeat row is older than
+// - Offline rule: Muse CAO is offline when its cto_heartbeat row is older than
 //   30 minutes (detection); the alert fires at 45 minutes (3 missed writes).
 // - Failover is detected when the VM's Muse health endpoint does not answer for
 //   3 consecutive 1-minute polls AND the heartbeat is older than 30 minutes.
-//   On failover with Muse CTO offline, the poller itself sends the agent_comms
-//   row to Claude CTO (its registry agent name).
+//   On failover with Muse CAO offline, the poller itself sends the agent_comms
+//   row to Claude CAO (its registry agent name).
 // - Alert transport: an agent_comms row addressed to Claude CTO (registry agentName); if the brain is
-//   down, the local file /var/lib/cto-relay/mini/alerts.jsonl (read by Claude CTO
+//   down, the local file /var/lib/cto-relay/mini/alerts.jsonl (read by Claude CAO
 //   at the next morning check-in).
 // - Dead-owner fallback (D5 §6): while the Muse relay program is down, the
 //   poller runs the close-out sweep every 6 hours with the REDUCED test
@@ -30,7 +30,7 @@ import { HOUR, MIN } from './util/time.js';
 export const OFFLINE_DETECT_MS = 30 * MIN;
 export const OFFLINE_ALERT_MS = 45 * MIN;
 export const FAILOVER_POLLS = 3;
-const FROM = 'CTO-RELAY-MINI-POLLER';
+const FROM = 'CAO-RELAY-MINI-POLLER';
 
 const StateSchema = z.object({
   museFails: z.number().int().nonnegative().default(0),
@@ -83,7 +83,7 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
   const statePath = join(stateDir, 'poller-state.json');
   const alertsPath = join(stateDir, 'alerts.jsonl');
   const registry: Registry = loadRegistry(env.CTO_RELAY_REGISTRY);
-  // Alerts go to Claude CTO's mailbox: its agent name comes from the registry, the single source ("Claude CTO").
+  // Alerts go to Claude CAO's mailbox: its agent name comes from the registry, the single source ("Claude CAO").
   const ALERT_TO = ctoEntry(registry, 'claude').agentName;
   const vmLan = env.CTO_RELAY_VM_LAN ?? registry.healthBind.find((h) => h !== '127.0.0.1') ?? '127.0.0.1';
   const url = env.SUPABASE_URL;
@@ -104,7 +104,7 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
   const now = Date.now();
   const { next, d } = decide(state, health.muse === true, hbAge, now);
   // R7-NEW-5: the poller's own liveness row, watched every minute by the VM Muse program
-  // and shown to Claude CTO at its 9am check-in (`cto-relay checkin-report`).
+  // and shown to Claude CAO at its 9am check-in (`cto-relay checkin-report`).
   await brain.upsertHeartbeat(POLLER_AGENT, new Date(now).toISOString()).catch(() => undefined);
 
   const send = async (subject: string, body: Record<string, unknown>): Promise<void> => {
@@ -114,8 +114,8 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
       appendLineCapped(alertsPath, JSON.stringify({ at: new Date(now).toISOString(), subject, ...body }));
     }
   };
-  if (d.alertHeartbeat) await send('Muse CTO heartbeat is older than 45 minutes', { heartbeatAgeMs: hbAge, health });
-  if (d.failover) await send('cto-relay failover: VM Muse relay down 3 polls and Muse CTO offline. Run cto-relay-mini-sync.sh (checked step) then start the mini relays.', { heartbeatAgeMs: hbAge, health });
+  if (d.alertHeartbeat) await send('Muse CAO heartbeat is older than 45 minutes', { heartbeatAgeMs: hbAge, health });
+  if (d.failover) await send('cto-relay failover: VM Muse relay down 3 polls and Muse CAO offline. Run cto-relay-mini-sync.sh (checked step) then start the mini relays.', { heartbeatAgeMs: hbAge, health });
   if (d.runSweep && secrets.slackBotToken) {
     const web = new WebClient(secrets.slackBotToken, { logLevel: LogLevel.ERROR, retryConfig: { retries: 0 } });
     const history = {
@@ -126,8 +126,8 @@ export async function runPoller(env: NodeJS.ProcessEnv = process.env): Promise<n
     const duties = new MuseDuties(brain, registry, noPost, history, () => now, log, () => undefined, async () => false);
     // R7-NEW-4: the fallback runs the REDUCED still-active test — prongs (b) + (c) only.
     // Prong (a) is skipped: the mini has no adapter to probe (and no v1 adapter has a live probe anyway).
-    // (b) reads Slack history (last 24 h) of the four CTO channels from config/registry.json with the
-    //     Muse CTO bot token (channels:history / groups:history) from the cto-relay-muse login keychain.
+    // (b) reads Slack history (last 24 h) of the four CAO channels from config/registry.json with the
+    //     Muse CAO bot token (channels:history / groups:history) from the cto-relay-muse login keychain.
     // (c) reads evidence.relay.last_progress_at from the LIVE brain rows (not the up-to-24h-stale
     //     off-host run-log copy), via the cto-relay-muse brain key in the same keychain.
     const findings = await duties.sweep({ post: false });

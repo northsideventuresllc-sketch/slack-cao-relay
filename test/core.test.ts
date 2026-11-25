@@ -22,10 +22,10 @@ test('write order: brain row → journal → short reply; reply says "started au
   assert.ok(!/fired/i.test(reply));
 });
 
-test('manual CTO reply says "queued for a person" and names the home', async () => {
+test('manual CAO reply says "queued for a person" and names the home', async () => {
   const h = await makeHarness('claude');
   await h.core.handleEvent(mention(h, 'claude', 'fire: test task'));
-  assert.match(h.sender.texts()[0]!, /queued for a person\. Muse CTO will start it in Claude Code\.$/);
+  assert.match(h.sender.texts()[0]!, /queued for a person\. Muse CAO will start it in Claude Code\.$/);
 });
 
 test('journal-failure test: a journal write failure voids the row; the start never runs', async () => {
@@ -39,7 +39,7 @@ test('journal-failure test: a journal write failure voids the row; the start nev
   assert.match(h.sender.texts()[0]!, /^Not started\./);
 });
 
-test('ingress test: "@Claude CTO fire: test task" starts one run in Claude only; an ordinary post starts none', async () => {
+test('ingress test: "@Claude CAO fire: test task" starts one run in Claude only; an ordinary post starts none', async () => {
   const claude = await makeHarness('claude');
   const gemini = await makeHarness('gemini', { brain: claude.brain, clock: claude.clock });
   const ev = mention(claude, 'claude', 'fire: test task');
@@ -74,7 +74,7 @@ test('dedup precedence: event redelivery dropped; same task within 30 min droppe
   assert.equal(h.brain.rows.size, 2);
 });
 
-test('already running: a second start for a CTO with a run going is ignored with the fixed reply', async () => {
+test('already running: a second start for a CAO with a run going is ignored with the fixed reply', async () => {
   const h = await makeHarness('claude');
   await h.core.handleEvent(mention(h, 'claude', 'fire: task one'));
   await h.advance(MIN);
@@ -110,14 +110,14 @@ test('abort-vs-claim: abort before claim cancels; claim after abort is refused (
   const id = h.brain.insertOrder[0]!;
   await h.core.handleEvent({ ...mention(h, 'claude', ''), ingress: 'message', text: `abort: ${id}` });
   assert.equal(h.brain.rows.get(id)?.status, 'cancelled');
-  assert.deepEqual(await h.core.claim(id, 'Muse CTO'), { ok: false, reason: 'unknown-or-closed' });
+  assert.deepEqual(await h.core.claim(id, 'Muse CAO'), { ok: false, reason: 'unknown-or-closed' });
 });
 
-test('abort-vs-claim: claim first → the abort becomes a stop request; "stopped" after Muse CTO stops it', async () => {
+test('abort-vs-claim: claim first → the abort becomes a stop request; "stopped" after Muse CAO stops it', async () => {
   const h = await makeHarness('claude');
   await h.core.handleEvent(mention(h, 'claude', 'fire: b'));
   const id = h.brain.insertOrder[0]!;
-  assert.equal((await h.core.claim(id, 'Muse CTO')).ok, true);
+  assert.equal((await h.core.claim(id, 'Muse CAO')).ok, true);
   assert.equal(h.brain.rows.get(id)?.status, 'claimed');
   await h.advance(1000);
   await h.core.handleEvent({ ...mention(h, 'claude', ''), ingress: 'message', text: `abort: ${id}` });
@@ -130,7 +130,7 @@ test('manual state machine: claim → start → link posts the run link and writ
   const h = await makeHarness('gemini');
   await h.core.handleEvent(mention(h, 'gemini', 'fire: research'));
   const id = h.brain.insertOrder[0]!;
-  await h.core.claim(id, 'Muse CTO');
+  await h.core.claim(id, 'Muse CAO');
   await h.core.markStarted(id);
   await h.core.setLink(id, 'mini session gem-42 + Slack thread');
   assert.equal(h.brain.rows.get(id)?.status, 'linked');
@@ -182,7 +182,7 @@ test('reconciler: a brain row with no journal entry (journal-failure orphan) is 
   const h = await makeHarness('claude');
   const claude = ctoEntry(h.registry, 'claude');
   const row = await h.brain.insertFireRow({
-    toAgent: 'Claude CTO',
+    toAgent: 'Claude CAO',
     fromAgent: 'MUSE',
     toHarness: 'claude',
     subject: 's',
@@ -219,7 +219,7 @@ test('lease: 3 missed heartbeats stop firing and posting; re-acquire with epoch+
   assert.equal(h.lease.currentEpoch(), epoch + 1);
 });
 
-test('fires outside the five CTO channels and from non-allowlisted authors are ignored (no reply, no start)', async () => {
+test('fires outside the five CAO channels and from non-allowlisted authors are ignored (no reply, no start)', async () => {
   const h = await makeHarness('muse');
   await h.core.handleEvent(mention(h, 'muse', 'fire: x', { channelId: 'COTHER001' }));
   await h.core.handleEvent(mention(h, 'muse', 'fire: x', { authorId: h.registry.jbUserId }));
