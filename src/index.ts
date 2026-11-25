@@ -1,110 +1,59 @@
 #!/usr/bin/env node
-// cao-relay CLI.
-//   cao-relay run                         one relay program (CAO from CAO_RELAY_CAO; legacy CTO_RELAY_CTO still read)
-//   cao-relay heartbeat                   write Muse CAO's cao_heartbeat row (cron cao-heartbeat)
-//   cao-relay poller                      the mini poller (1-minute cron on the mini; secrets on stdin)
-//   cao-relay checkin-report              Claude CAO's 9am check-in report on the mini (brain key on stdin)
-//   cao-relay admin <cmd> --cao <cao> …   control socket: claim | start | link | stopped | closeout | review-clear | journal-has | status
-//   cao-relay post-queue-append …         append one validated entry to the Muse post-queue (run as cao-relay-muse)
+// cao-relay run
+// cao-relay send --from <cao> --to <cao|all> --text "..."     one CAO talks to another without sitting in Slack
+//
+// Keys come from the environment by name only: SLACK_BOT_TOKEN and SLACK_APP_TOKEN (run); SLACK_BOT_TOKEN (send).
+// Nothing here prints, logs or stores a key value.
+import { WebClient } from '@slack/web-api';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { loadRegistry } from './registry.js';
+import { execute, runRelay, slackPoster } from './relay.js';
+import { findCao, plan } from './router.js';
+import { State } from './state.js';
 
-import { readFileSync } from 'node:fs';
-import { loadConfig } from './config.js';
-import { withLegacyEnv } from './legacy.js';
-import { ControlCommandSchema, controlSocketPath, sendControl } from './control.js';
-import { writeHeartbeat } from './heartbeat.js';
-import { runPoller } from './poller.js';
-import { checkinReport } from './checkin.js';
-import { appendPostQueue, PostQueueEntrySchema } from './postqueue.js';
-import { RelayProgram } from './relay.js';
+const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, '..');
+const log = (s: string) => process.stdout.write(`${new Date().toISOString()} ${s}\n`);
 
 function flags(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a?.startsWith('--')) {
-      const v = argv[i + 1];
-      out[a.slice(2)] = v !== undefined && !v.startsWith('--') ? (i++, v) : 'true';
-    }
+    if (a?.startsWith('--')) { const v = argv[i + 1]; out[a.slice(2)] = v !== undefined && !v.startsWith('--') ? (i++, v) : 'true'; }
   }
   return out;
 }
-
-const num = (v: string | undefined): number | null => (v === undefined ? null : Number(v));
+const need = (name: string): string => {
+  const v = process.env[name];
+  if (!v) { process.stderr.write(`${name} is not set in this environment\n`); process.exit(78); }
+  return v;
+};
 
 async function main(): Promise<number> {
   const [cmd = 'run', ...rest] = process.argv.slice(2);
-  const env = withLegacyEnv();
-  switch (cmd) {
-    case 'run':
-      return new RelayProgram(loadConfig()).run();
-    case 'heartbeat':
-      return writeHeartbeat();
-    case 'poller':
-      return runPoller();
-    case 'checkin-report':
-      return checkinReport();
-    case 'admin': {
-      const [sub, ...more] = rest;
-      const f = flags(more);
-      const cao = f.cao ?? env.CAO_RELAY_CAO;
-      if (!sub || !cao) {
-        process.stderr.write('usage: cao-relay admin <cmd> --cao <cao> [--fire-id ID] [--name N] [--link L] [--vault-log-path P] [--session-url U] [--tokens N] [--minutes N]\n');
-        return 64;
-      }
-      const command = ControlCommandSchema.parse({
-        cmd: sub,
-        fireId: f['fire-id'],
-        name: f.name,
-        link: f.link,
-        vaultLogPath: f['vault-log-path'],
-        sessionUrl: f['session-url'] ?? null,
-        tokens: num(f.tokens),
-        minutes: num(f.minutes),
-      });
-      const res = await sendControl(controlSocketPath(env.CAO_RELAY_RUN_DIR ?? '/run/cao-relay', cao), command);
-      process.stdout.write(JSON.stringify(res) + '\n');
-      return (res as { ok?: boolean }).ok ? 0 : 1;
-    }
-    case 'copy-check': {
-      // R5-FU-9: run by cao-relay-offhost-copy.sh after each copy. Reads the journal copy,
-      // extracts its fire ids (fire-request ids + brain ids mapped from brain-down starts),
-      // and asks the Muse program to compare them with the brain rows.
-      const f = flags(rest);
-      if (!f.target || !f.copy) {
-        process.stderr.write('usage: cao-relay copy-check --target <cao> --copy <journal copy path>\n');
-        return 64;
-      }
-      const ids = new Set<string>();
-      for (const line of readFileSync(f.copy, 'utf8').split('\n')) {
-        try {
-          const r = JSON.parse(line) as { kind?: string; fireId?: string; brainId?: string; state?: string };
-          if (r.kind === 'fire-request' && r.fireId) ids.add(r.fireId);
-          if (r.state === 'brain-written' && r.brainId) ids.add(r.brainId);
-        } catch {
-          // torn line: skip
-        }
-      }
-      const command = ControlCommandSchema.parse({ cmd: 'copy-check', target: f.target, ids: [...ids] });
-      const res = await sendControl(controlSocketPath(env.CAO_RELAY_RUN_DIR ?? '/run/cao-relay', 'muse'), command);
-      process.stdout.write(JSON.stringify(res) + '\n');
-      return (res as { ok?: boolean }).ok ? 0 : 1;
-    }
-    case 'post-queue-append': {
-      const f = flags(rest);
-      const entry = PostQueueEntrySchema.parse(f.kind === 'fire' ? { kind: 'fire', cao: f.cao, task: f.task } : { kind: 'post', channel: f.channel, text: f.text });
-      appendPostQueue(env.CAO_RELAY_POST_QUEUE ?? '/var/lib/cao-relay/muse/post-queue.jsonl', entry);
-      return 0;
-    }
-    default:
-      process.stderr.write(`unknown command ${cmd}\n`);
-      return 64;
+  const reg = loadRegistry(process.env.CAO_RELAY_REGISTRY ?? join(root, 'config', 'registry.json'));
+  const stateDir = process.env.CAO_RELAY_STATE_DIR ?? join(root, 'var');
+  const inboxDir = process.env.CAO_RELAY_INBOX_DIR ?? join(stateDir, 'inbox');
+  const state = new State(join(stateDir, 'state.json'));
+
+  if (cmd === 'run') return runRelay({ reg, state, inboxDir, botToken: need('SLACK_BOT_TOKEN'), appToken: need('SLACK_APP_TOKEN'), log });
+
+  if (cmd === 'send') {
+    const f = flags(rest);
+    const from = f.from ? findCao(reg, f.from) : undefined;
+    if (!from || !f.to || !f.text) { process.stderr.write('usage: cao-relay send --from <cao> --to <cao|all> --text "..."\n'); return 64; }
+    const web = new WebClient(need('SLACK_BOT_TOKEN'));
+    const poster = slackPoster(web);
+    // The sender's own channel shows what was sent; the router then carries it as a normal "to <cao>:" line.
+    const ts = await poster.post({ channel: from.channelId, text: `To ${f.to}: ${f.text}` });
+    const p = plan(reg, { channel: from.channelId, ts, text: `To ${f.to}: ${f.text}`, userId: from.botUserId ?? reg.extraAuthorIds[0] ?? reg.jbUserId }, state, 'NONE');
+    const done = await execute(p, { poster, state, inboxDir, log });
+    log(`send: ${p.why}; posted ${done.length}`);
+    return p.posts.length ? 0 : 1;
   }
+  process.stderr.write('usage: cao-relay run | send --from <cao> --to <cao|all> --text "..."\n');
+  return 64;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (err: unknown) => {
-    process.stderr.write(JSON.stringify({ msg: 'fatal', err: (err as { name?: string }).name ?? 'error' }) + '\n');
-    process.exit(1);
-  },
-);
+main().then((c) => process.exit(c), (e) => { process.stderr.write(`cao-relay: ${(e as Error).message}\n`); process.exit(1); });
