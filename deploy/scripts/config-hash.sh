@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the config hash recorded in cto-relay-expected.json: SHA-256 over
+# Prints the config hash recorded in cao-relay-expected.json: SHA-256 over
 # config/registry.json followed by config/blocklist.json (byte for byte).
 set -euo pipefail
 repo="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"

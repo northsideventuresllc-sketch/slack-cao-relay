@@ -41,7 +41,7 @@ export const JournalRecordSchema = z.object({
   timestamp: z.string().datetime(),
   claimName: z.string().max(80).optional(),
   windowStart: z.string().datetime().optional(),
-  cto: z.string().optional(),
+  cao: z.string().optional(),
   state: z.enum(FIRE_STATES).optional(),
   channelId: z.string().max(32).optional(),
   normHash: z.string().regex(HEX64).optional(),

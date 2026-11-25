@@ -12,7 +12,7 @@ import { relayEvidence, type BrainApi, type FireRow, type RelayEvidence } from '
 import type { Breaker } from './breaker.js';
 import { REPLY_BREAKER } from './breaker.js';
 import type { CostEnvelope } from './caps.js';
-import { allowedAuthors, ctoChannelIds, type CtoEntry, type Registry } from './config.js';
+import { allowedAuthors, caoChannelIds, type CaoEntry, type Registry } from './config.js';
 import type { FireStatus, HarnessAdapter, SlackEvent } from './contracts.js';
 import type { Dedup } from './dedup.js';
 import { eventKey, idempotencyKey } from './dedup.js';
@@ -42,7 +42,7 @@ export const ORPHAN_GRACE_MS = 5 * MIN;
 export const CHECKIN_HOUR = 9;
 
 export interface CoreDeps {
-  cto: CtoEntry;
+  cao: CaoEntry;
   registry: Registry;
   timezone: string;
   clock: Clock;
@@ -106,8 +106,8 @@ export class RelayCore {
 
   constructor(readonly d: CoreDeps) {
     this.allowed = allowedAuthors(d.registry);
-    this.channels = ctoChannelIds(d.registry);
-    this.agentByBotId = new Map(d.registry.ctos.map((c) => [c.botUserId, c.agentName]));
+    this.channels = caoChannelIds(d.registry);
+    this.agentByBotId = new Map(d.registry.caos.map((c) => [c.botUserId, c.agentName]));
   }
 
   private now(): number {
@@ -116,7 +116,7 @@ export class RelayCore {
 
   /** Append a journal record and apply it to the queue in one step. */
   record(input: JournalInput): void {
-    const rec = this.d.journal.append({ cto: this.d.cto.key, ...input });
+    const rec = this.d.journal.append({ cao: this.d.cao.key, ...input });
     const before = this.d.book.get(rec.fireId);
     const wasTerminal = before?.terminal ?? true;
     this.d.book.apply(rec);
@@ -126,7 +126,7 @@ export class RelayCore {
     const after = this.d.book.get(rec.fireId);
     if (after && !wasTerminal && after.terminal && rec.state !== 'closed') {
       const minutes = Math.round((this.now() - after.acceptedAt) / 60_000);
-      this.d.runlog.cost(after.id, after.taskHash, this.d.cto.home, after.startedAt === null && after.claimAt === null ? 0 : null, minutes);
+      this.d.runlog.cost(after.id, after.taskHash, this.d.cao.home, after.startedAt === null && after.claimAt === null ? 0 : null, minutes);
     }
   }
 
@@ -246,7 +246,7 @@ export class RelayCore {
   /** Allowlist (authors + the five CAO channels), then the pattern; anything else is ignored and logged. */
   async handleStartIngress(ev: SlackEvent, ctx: StartContext): Promise<StartOutcome> {
     if (!this.channels.has(ev.channelId)) {
-      this.d.runlog.check(ctx.eventKey, 'allowlist', 'outside-cto-channels');
+      this.d.runlog.check(ctx.eventKey, 'allowlist', 'outside-cao-channels');
       return 'ignored';
     }
     if (!this.allowed.has(ev.authorId)) {
@@ -257,7 +257,7 @@ export class RelayCore {
       return 'ignored';
     }
     this.d.runlog.check(ctx.eventKey, 'allowlist', 'ok');
-    const parsed = parseStart(ev, this.d.cto, this.d.registry);
+    const parsed = parseStart(ev, this.d.cao, this.d.registry);
     if (parsed.kind === 'ignore') {
       this.d.runlog.check(ctx.eventKey, 'pattern', parsed.reason);
       return 'ignored';
@@ -289,7 +289,7 @@ export class RelayCore {
   async handleStart(task: string, ctx: StartContext): Promise<StartOutcome> {
     const now = this.now();
     const normHash = normalizedTaskHash(task);
-    const idemKey = idempotencyKey(this.d.cto.key, task, ctx.idemAt);
+    const idemKey = idempotencyKey(this.d.cao.key, task, ctx.idemAt);
 
     // event dedup → idempotency key → task dedup
     const verdict = ctx.isRetry ? this.d.dedup.checkRetry(idemKey, normHash, now) : this.d.dedup.check(ctx.eventKey, idemKey, normHash, now);
@@ -408,10 +408,10 @@ export class RelayCore {
     }
     this.d.dedup.accept(idemKey, normHash, runId, this.now());
     this.d.breaker.record(normHash, runId, this.now());
-    this.d.runlog.started(runId, taskHash, this.d.cto.key);
+    this.d.runlog.started(runId, taskHash, this.d.cao.key);
 
     const safe = this.d.poster.safeTask(task);
-    const reply = status === 'started-automatically' ? T.startedAutomatically(safe, runId) : T.queuedForPerson(safe, runId, this.d.cto);
+    const reply = status === 'started-automatically' ? T.startedAutomatically(safe, runId) : T.queuedForPerson(safe, runId, this.d.cao);
     const posted = await this.replyTimed(ctx.channelId, reply, ctx.receivedAt, runId);
     if (posted) this.stateRecord(runId, 'reply-posted');
     return 'started';
@@ -446,10 +446,10 @@ export class RelayCore {
     this.d.breaker.record(normHash, provisionalId, this.now());
     // OPT-FU-3 / D5: every start writes its run-log `started` entry — a held start under its provisional id;
     // when the brain write lands, retryHeld writes the brain-id `started` entry (reason names the provisional id).
-    this.d.runlog.started(provisionalId, taskHash, this.d.cto.key);
+    this.d.runlog.started(provisionalId, taskHash, this.d.cao.key);
     const safe = this.d.poster.safeTask(task);
     // Manual CAOs: with the brain down the heartbeat cannot be read, so Muse CAO is treated as offline (fail-safe).
-    const reply = this.d.cto.adapter === 'automatic-muse' ? T.brainDown(safe, provisionalId) : T.waitingBothDown(safe, provisionalId);
+    const reply = this.d.cao.adapter === 'automatic-muse' ? T.brainDown(safe, provisionalId) : T.waitingBothDown(safe, provisionalId);
     const posted = await this.replyTimed(ctx.channelId, reply, ctx.receivedAt, provisionalId);
     if (posted) this.stateRecord(provisionalId, 'reply-posted');
     this.d.alert('brain-down-start-held', { fireId: provisionalId });
@@ -480,7 +480,7 @@ export class RelayCore {
       }
       if (!(await this.d.lease.verifyLive())) return;
       // A write that timed out may have landed: adopt it instead of writing twice.
-      const found = await this.d.brain.findFireRowByIdem(this.d.cto.agentName, e.idemKey);
+      const found = await this.d.brain.findFireRowByIdem(this.d.cao.agentName, e.idemKey);
       const existing = found && found.status === 'queued' ? found : null;
       const runId =
         existing?.id ??
@@ -493,9 +493,9 @@ export class RelayCore {
         ).runId;
       const provisionalId = e.id;
       this.stateRecord(provisionalId, 'brain-written', { brainId: runId });
-      this.d.runlog.started(runId, e.taskHash, this.d.cto.key, provisionalId);
+      this.d.runlog.started(runId, e.taskHash, this.d.cao.key, provisionalId);
       const safe = this.d.poster.safeTask(task);
-      const reply = this.d.cto.adapter === 'automatic-muse' ? T.startedAutomatically(safe, runId) : T.queuedForPerson(safe, runId, this.d.cto);
+      const reply = this.d.cao.adapter === 'automatic-muse' ? T.startedAutomatically(safe, runId) : T.queuedForPerson(safe, runId, this.d.cao);
       await this.d.poster.post(e.channelId, reply, 'template', runId);
     } catch {
       // still down — next try in an hour
@@ -587,7 +587,7 @@ export class RelayCore {
     const now = iso(this.now());
     const row = await this.updateEvidence(e.id, (ev) => ({ ...ev, claim: { name: name.slice(0, 80), at: now }, last_progress_at: now }), { to: 'claimed', from: ['queued'] });
     if (!row) this.d.alert('claim-brain-write-failed', { fireId: e.id });
-    this.d.runlog.progress(e.id, 'claimed', this.d.cto.key);
+    this.d.runlog.progress(e.id, 'claimed', this.d.cao.key);
     if (e.claimAt !== null) this.d.metrics.manualQueue.add(e.claimAt - e.acceptedAt);
     return { ok: true, reason: 'claimed' };
   }
@@ -599,7 +599,7 @@ export class RelayCore {
     this.stateRecord(e.id, 'started');
     const now = iso(this.now());
     await this.updateEvidence(e.id, (ev) => ({ ...ev, last_progress_at: now }), { to: 'started', from: ['claimed'] });
-    this.d.runlog.progress(e.id, 'started', this.d.cto.key);
+    this.d.runlog.progress(e.id, 'started', this.d.cao.key);
     return { ok: true, reason: 'started' };
   }
 
@@ -617,7 +617,7 @@ export class RelayCore {
     this.stateRecord(e.id, 'linked');
     const now = iso(this.now());
     await this.updateEvidence(e.id, (ev) => ({ ...ev, run_chat_url: clean, link_posted_at: now, last_progress_at: now }), { to: 'linked', from: ['queued', 'claimed', 'started'] });
-    this.d.runlog.progress(e.id, 'linked', this.d.cto.key, clean);
+    this.d.runlog.progress(e.id, 'linked', this.d.cao.key, clean);
     this.d.metrics.link.add(this.now() - e.acceptedAt);
     return true;
   }
@@ -653,12 +653,12 @@ export class RelayCore {
     const status = row.status ?? '';
     if ((status === 'claimed' || status === 'started' || status === 'linked') && e.claimAt === null) {
       this.stateRecord(e.id, 'claimed', { claimName: (ev?.claim?.name ?? 'Muse CAO (drain)').slice(0, 80) });
-      this.d.runlog.progress(e.id, 'claimed', this.d.cto.key);
+      this.d.runlog.progress(e.id, 'claimed', this.d.cao.key);
       if (e.claimAt !== null) this.d.metrics.manualQueue.add(e.claimAt - e.acceptedAt);
     }
     if ((status === 'started' || status === 'linked') && e.startedAt === null) {
       this.stateRecord(e.id, 'started');
-      this.d.runlog.progress(e.id, 'started', this.d.cto.key);
+      this.d.runlog.progress(e.id, 'started', this.d.cao.key);
     }
     if (ev?.run_chat_url && !e.linkPosted) await this.postLink(e, ev.run_chat_url);
     if (ev?.lock_cleared && !e.lockCleared) this.stateRecord(e.id, 'lock-cleared', { reason: 'stalled-9am' });

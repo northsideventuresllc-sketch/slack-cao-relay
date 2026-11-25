@@ -1,17 +1,18 @@
-// `cto-relay checkin-report` — R7-NEW-5: the dead-alerter fallback, named.
+// `cao-relay checkin-report` — R7-NEW-5: the dead-alerter fallback, named.
 // Claude CAO runs this at ITS OWN daily 9am check-in (not Muse CAO's — an
 // offline Muse CAO cannot notice its own stale heartbeat). Run on the mini as
-// user cto-relay-muse via deploy/scripts/mini-checkin.sh (brain key on stdin).
+// user cao-relay-muse via deploy/scripts/mini-checkin.sh (brain key on stdin).
 // It reports, in plain lines:
 //   - Muse CAO's heartbeat age (offline over 30 minutes),
 //   - the mini poller's heartbeat age (the poller itself down → the dead alerter),
-//   - every alert in /var/lib/cto-relay/mini/alerts.jsonl not yet shown, then
+//   - every alert in /var/lib/cao-relay/mini/alerts.jsonl not yet shown, then
 //     records the read position so each alert is shown once.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { DirectBrain } from './brain.js';
+import { withLegacyEnv } from './legacy.js';
 import { POLLER_AGENT, POLLER_STALE_MS } from './sweep.js';
 import { OFFLINE_DETECT_MS } from './poller.js';
 import { writeFileAtomicSync } from './util/durable.js';
@@ -27,7 +28,7 @@ export function formatAge(ms: number | null): string {
 
 export async function checkinReport(env: NodeJS.ProcessEnv = process.env, out: (l: string) => void = (l) => process.stdout.write(l + '\n')): Promise<number> {
   const url = env.SUPABASE_URL;
-  const dir = env.CTO_RELAY_MINI_DIR ?? '/var/lib/cto-relay/mini';
+  const dir = withLegacyEnv(env).CAO_RELAY_MINI_DIR ?? '/var/lib/cao-relay/mini';
   if (!url) return 78;
   const key = z.object({ brainKey: z.string().min(1) }).parse(JSON.parse(readFileSync(0, 'utf8'))).brainKey;
   const brain = new DirectBrain({ supabaseUrl: url, apiKey: key, timeoutMs: 10_000 });

@@ -1,17 +1,17 @@
 {
-  "$comment": "CAO registry — the single source for which adapter serves which CAO (PLAN-v7 D6). IDs from RUNBOOK.md Phase 1 verification (2026-11-05). Agent names: MUSE verified from a live agent_comms row (RUNBOOK Phase 1); Claude CAO confirmed by JB (live rows carry it; PLAN-v7 D7 wrote CLAUDE); Gemini CAO set by COUNCIL GATE round 1 (seen in live rows); AXON-Hermes CAO set by COUNCIL GATE round 1 and confirmed by JB (matches the Slack bot name). Values in <ANGLE_BRACKETS> are placeholders: the relay refuses to start while any placeholder remains. The four private CAO channels are created in Phase 3; record their ids here then.",
+  "$comment": "CAO registry — the single source for which adapter serves which CAO (PLAN-v7 D6). IDs from RUNBOOK.md Phase 1 verification (2026-11-05). Agent names: MUSE verified from a live agent_comms row (RUNBOOK Phase 1); Claude CAO confirmed by JB (live rows carry it; PLAN-v7 D7 wrote CLAUDE); Gemini CAO set by COUNCIL GATE round 1 (seen in live rows); AXON-Hermes CAO set by COUNCIL GATE round 1 and confirmed by JB (matches the Slack bot name). Values in <ANGLE_BRACKETS> are placeholders: the relay refuses to start while any placeholder remains. Channel ids and names recorded 2026-11-25 from the live Slack workspace (#cao-bots, #cao-muse, #cao-claude, #cao-gemini, #cao-axon; all public, created 2026-11-20). The axon-hermes relay posts to #cao-axon.",
   "workspace": {
     "teamId": "T0CDTE2JR0B",
     "domain": "northsidevent-jtb2955.slack.com"
   },
-  "ctoBotsChannelId": "C0CEU7SMCHE",
+  "caoBotsChannelId": "C0CKKGVF4P5",
   "jbUserId": "U0CDUC7UEP7",
   "allowlist": {
     "$comment": "Authors allowed to start work. Default: the four CAO bot user ids only. JB's id is recorded above for the future membership step and is NOT in the allowlist (Phase 1 exit rule).",
     "extraAuthorIds": []
   },
   "healthBind": ["127.0.0.1", "198.19.0.2"],
-  "ctos": [
+  "caos": [
     {
       "key": "muse",
       "displayName": "Muse CAO",
@@ -19,8 +19,8 @@
       "botUserId": "U0CDXQM4FUN",
       "adapter": "automatic-muse",
       "agentName": "MUSE",
-      "channelId": "<CTO_MUSE_CHANNEL_ID>",
-      "channelName": "cto-muse",
+      "channelId": "C0CKACGNP2T",
+      "channelName": "cao-muse",
       "command": "/fire-muse",
       "healthPort": 9101,
       "home": "the Muse app",
@@ -32,9 +32,9 @@
       "appId": "A0CDTGZHW2X",
       "botUserId": "U0CDJCQ3K3R",
       "adapter": "manual",
-      "agentName": "Claude CTO",
-      "channelId": "<CTO_CLAUDE_CHANNEL_ID>",
-      "channelName": "cto-claude",
+      "agentName": "Claude CAO",
+      "channelId": "C0CKVEVM1QU",
+      "channelName": "cao-claude",
       "command": "/fire-claude",
       "healthPort": 9102,
       "home": "Claude Code",
@@ -46,9 +46,9 @@
       "appId": "A0CDZJJF2FL",
       "botUserId": "U0CDJCXHW0P",
       "adapter": "manual",
-      "agentName": "Gemini CTO",
-      "channelId": "<CTO_GEMINI_CHANNEL_ID>",
-      "channelName": "cto-gemini",
+      "agentName": "Gemini CAO",
+      "channelId": "C0CKTLCEJ49",
+      "channelName": "cao-gemini",
       "command": "/fire-gemini",
       "healthPort": 9103,
       "home": "Antigravity",
@@ -60,9 +60,9 @@
       "appId": "A0CDXR7766A",
       "botUserId": "U0CDXRAETNJ",
       "adapter": "manual",
-      "agentName": "AXON-Hermes CTO",
-      "channelId": "<CTO_AXON_HERMES_CHANNEL_ID>",
-      "channelName": "cto-axon-hermes",
+      "agentName": "AXON-Hermes CAO",
+      "channelId": "C0CKTLCH49X",
+      "channelName": "cao-axon",
       "command": "/fire-axon-hermes",
       "healthPort": 9104,
       "home": "the AXON-Hermes chat",
@@ -76,7 +76,7 @@
     "weeklyStartFloor": 5,
     "dailyStartCapTotal": 1,
     "monthlyStartCapTotal": 24,
-    "perCtoWeeklyManualCap": 10,
+    "perCaoWeeklyManualCap": 10,
     "manualMinutesPerStart": 15,
     "dailyManualMinutesCeiling": 60
   }

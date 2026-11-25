@@ -18,8 +18,8 @@ export interface RunLogEntry {
   at: string;
   kind: RunLogKind;
   fireId: string | null;
-  cto: string;
-  writer: string; // "adapter:<cto>" for state-changing entries by the CAO's own adapter, else "relay"
+  cao: string;
+  writer: string; // "adapter:<cao>" for state-changing entries by the CAO's own adapter, else "relay"
   state?: string;
   sessionId?: string | null; // run-chat id/link; null until linked
   taskHash?: string;
@@ -41,15 +41,15 @@ export class RunLog {
 
   constructor(
     stateDir: string,
-    readonly cto: string,
+    readonly cao: string,
     private readonly clock: Clock,
   ) {
     this.path = join(stateDir, 'run-log.jsonl');
     this.auditPath = join(stateDir, 'audit.jsonl');
   }
 
-  write(entry: Omit<RunLogEntry, 'at' | 'cto'>): RunLogEntry {
-    const e: RunLogEntry = { at: iso(this.clock()), cto: this.cto, ...entry };
+  write(entry: Omit<RunLogEntry, 'at' | 'cao'>): RunLogEntry {
+    const e: RunLogEntry = { at: iso(this.clock()), cao: this.cao, ...entry };
     appendLineSync(this.path, JSON.stringify(e));
     return e;
   }
@@ -76,7 +76,7 @@ export class RunLog {
   /** Audit log: ids, hashes, and redacted text of at most 80 characters (the caller redacts). */
   audit(fields: { fireId?: string | null; eventKey?: string; action: string; snippet?: string }): void {
     const snippet = fields.snippet && fields.snippet.length > 80 ? fields.snippet.slice(0, 80) : fields.snippet;
-    appendLineSync(this.auditPath, JSON.stringify({ at: iso(this.clock()), cto: this.cto, ...fields, snippet }));
+    appendLineSync(this.auditPath, JSON.stringify({ at: iso(this.clock()), cao: this.cao, ...fields, snippet }));
   }
 
   entries(): RunLogEntry[] {

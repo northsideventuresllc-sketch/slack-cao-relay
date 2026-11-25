@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Closeouts } from '../src/closeout.js';
 import { Outbox, nextAttemptDelay, FAST_RETRIES, SLOW_RETRIES } from '../src/outbox.js';
 import { parseSessionLog, parseSidecar, safeVaultPath, type ReadBack, type VaultReader } from '../src/vault.js';
-import { ctoEntry } from '../src/config.js';
+import { caoEntry } from '../src/config.js';
 import { sha256 } from '../src/util/hash.js';
 import { MIN, HOUR } from '../src/util/time.js';
 import { makeHarness, mention } from './helpers.js';
@@ -22,9 +22,9 @@ class FakeVault implements VaultReader {
   }
 }
 
-async function linkedRun(cto: 'muse' | 'claude' = 'claude') {
-  const h = await makeHarness(cto);
-  await h.core.handleEvent(mention(h, cto, 'fire: build groups'));
+async function linkedRun(cao: 'muse' | 'claude' = 'claude') {
+  const h = await makeHarness(cao);
+  await h.core.handleEvent(mention(h, cao, 'fire: build groups'));
   const id = h.brain.insertOrder[0]!;
   await h.core.claim(id, 'Muse CAO');
   await h.core.markStarted(id);
@@ -35,11 +35,11 @@ async function linkedRun(cto: 'muse' | 'claude' = 'claude') {
   return { h, id, vault, outbox, co };
 }
 
-test('close-out: read-back matches → full map in the CAO channel, then the pointer in #cto-bots; row closed; lock released', async () => {
+test('close-out: read-back matches → full map in the CAO channel, then the pointer in #cao-bots; row closed; lock released', async () => {
   const { h, id, co } = await linkedRun('claude');
   const res = await co.submit({ fireId: id, vaultLogPath: 'Sector/Session Logs/2026-11-05-x.md', sessionUrl: null, tokens: 1200, minutes: 30 });
   assert.deepEqual(res, { ok: true, reason: 'posted' });
-  const claude = ctoEntry(h.registry, 'claude');
+  const claude = caoEntry(h.registry, 'claude');
   const map = h.sender.posts.at(-2)!;
   const ptr = h.sender.posts.at(-1)!;
   assert.equal(map.channel, claude.channelId);
@@ -48,8 +48,8 @@ test('close-out: read-back matches → full map in the CAO channel, then the poi
   assert.match(lines[1]!, /^Log: <https:\/\/vault\.invalid\/.+\|2026-11-05-x>$/);
   assert.equal(lines[2], 'Session: https://claude.ai/code/session-example');
   assert.equal(lines[3], 'Still open: Deploy check. Owner: Muse CAO.');
-  for (const c of h.registry.ctos) assert.ok(map.text.includes(`<@${c.botUserId}>`), 'map tags all four');
-  assert.equal(ptr.channel, h.registry.ctoBotsChannelId);
+  for (const c of h.registry.caos) assert.ok(map.text.includes(`<@${c.botUserId}>`), 'map tags all four');
+  assert.equal(ptr.channel, h.registry.caoBotsChannelId);
   assert.match(ptr.text, /^Close-out: Match Fit email groups built and merged\.\. Map is here: https:\/\/example\.invalid\/archives\//);
   assert.equal(h.brain.rows.get(id)?.status, 'closed');
   assert.equal(h.book.get(id)?.terminal, true);

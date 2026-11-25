@@ -2,7 +2,7 @@
 // Only app_mention events and slash commands ever reach parseStart() — the
 // single-parser rule is enforced by the router, and asserted here.
 
-import type { CtoEntry, Registry } from './config.js';
+import type { CaoEntry, Registry } from './config.js';
 import type { SlackEvent } from './contracts.js';
 
 export const MAX_TASK_CHARS = 280;
@@ -38,8 +38,8 @@ export function stripCodeAndQuotes(text: string): string {
 
 const MENTION_RE = /<@([A-Z0-9]+)(?:\|[^>]*)?>/g;
 
-function mentionedCtoIds(text: string, ctos: CtoEntry[]): string[] {
-  const ids = new Set(ctos.map((c) => c.botUserId));
+function mentionedCaoIds(text: string, caos: CaoEntry[]): string[] {
+  const ids = new Set(caos.map((c) => c.botUserId));
   const out: string[] = [];
   for (const m of text.matchAll(MENTION_RE)) {
     const id = m[1];
@@ -63,7 +63,7 @@ function validateTask(raw: string): ParseResult {
  *   pattern get "Start one CAO at a time." — only from the first-mentioned
  *   CAO's program, so exactly one reply goes out.
  */
-export function parseStart(ev: SlackEvent, me: CtoEntry, registry: Registry): ParseResult {
+export function parseStart(ev: SlackEvent, me: CaoEntry, registry: Registry): ParseResult {
   if (ev.ingress === 'message' || ev.ingress === undefined) {
     // Single-parser rule: a `message` event never feeds the fire parser.
     return { kind: 'ignore', reason: 'message-event-never-parsed' };
@@ -83,7 +83,7 @@ export function parseStart(ev: SlackEvent, me: CtoEntry, registry: Registry): Pa
   const startRe = /<@([A-Z0-9]+)(?:\|[^>]*)?>\s*fire:/i;
   if (!startRe.test(cleaned)) return { kind: 'ignore', reason: 'no-start-pattern' };
 
-  const mentioned = mentionedCtoIds(cleaned, registry.ctos);
+  const mentioned = mentionedCaoIds(cleaned, registry.caos);
   if (mentioned.length > 1) {
     if (mentioned[0] === me.botUserId) return { kind: 'reply', text: REPLY_MULTI, reason: 'multi-mention' };
     return { kind: 'ignore', reason: 'multi-mention-other-replies' };

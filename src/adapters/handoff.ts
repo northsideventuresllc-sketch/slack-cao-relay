@@ -5,7 +5,7 @@
 // in the short reply (R6-NEW-4) — one value everywhere.
 
 import type { AdapterHealth, FireRequest, FireStatus, HarnessAdapter, RunState } from '../contracts.js';
-import type { CtoEntry } from '../config.js';
+import type { CaoEntry } from '../config.js';
 import { relayEvidence, type BrainApi, type FireRow, type RelayEvidence } from '../brain.js';
 import { iso, type Clock } from '../util/time.js';
 
@@ -22,7 +22,7 @@ export const MANUAL_QUEUE_CAP = 10;
 abstract class BrainHandoffAdapter implements HarnessAdapter {
   constructor(
     protected readonly brain: BrainApi,
-    protected readonly cto: CtoEntry,
+    protected readonly cao: CaoEntry,
     protected readonly clock: Clock,
   ) {}
 
@@ -36,7 +36,7 @@ abstract class BrainHandoffAdapter implements HarnessAdapter {
     const now = iso(this.clock());
     const evidence: RelayEvidence = {
       v: 0,
-      cto: this.cto.key,
+      cao: this.cao.key,
       task_hash: meta.taskHash,
       norm_hash: meta.normHash,
       idem_key: meta.idemKey,
@@ -44,13 +44,13 @@ abstract class BrainHandoffAdapter implements HarnessAdapter {
       slack: { channel_id: meta.channelId, ts: meta.messageTs, permalink: meta.permalink },
       run_chat_url: null,
       last_progress_at: now,
-      writer: `cto-relay-${this.cto.key}`,
+      writer: `cao-relay-${this.cao.key}`,
     };
     const row = await this.brain.insertFireRow({
-      toAgent: this.cto.agentName,
+      toAgent: this.cao.agentName,
       fromAgent: meta.fromAgent,
-      toHarness: this.cto.key,
-      subject: `Start for ${this.cto.displayName}`,
+      toHarness: this.cao.key,
+      subject: `Start for ${this.cao.displayName}`,
       body: req.task,
       evidence,
       firedAt: now,
@@ -76,7 +76,7 @@ abstract class BrainHandoffAdapter implements HarnessAdapter {
   abstract health(): Promise<AdapterHealth>;
 
   protected async queueStats(): Promise<{ depth: number; lastClaim: string | null }> {
-    const rows = await this.brain.listFireRows(this.cto.agentName, ['queued', 'claimed', 'started', 'linked']);
+    const rows = await this.brain.listFireRows(this.cao.agentName, ['queued', 'claimed', 'started', 'linked']);
     let lastClaim: string | null = null;
     for (const r of rows) {
       const c = relayEvidence(r)?.claim?.at ?? null;
@@ -130,6 +130,6 @@ export class ManualAdapter extends BrainHandoffAdapter {
   }
 }
 
-export function makeAdapter(brain: BrainApi, cto: CtoEntry, clock: Clock): HarnessAdapter {
-  return cto.adapter === 'automatic-muse' ? new MuseAdapter(brain, cto, clock) : new ManualAdapter(brain, cto, clock);
+export function makeAdapter(brain: BrainApi, cao: CaoEntry, clock: Clock): HarnessAdapter {
+  return cao.adapter === 'automatic-muse' ? new MuseAdapter(brain, cao, clock) : new ManualAdapter(brain, cao, clock);
 }

@@ -1,0 +1,4 @@
+# /etc/sudoers.d/cao-relay — Muse CAO's main-chat user may append to the Muse
+# post-queue as cao-relay-muse (the file is owner cao-relay-muse, mode 0600 —
+# PLAN-v7 D2). Replace <MUSE_CAO_USER> with that user's login before installing.
+<MUSE_CAO_USER> ALL=(cao-relay-muse) NOPASSWD: /usr/local/bin/cao-relay post-queue-append *

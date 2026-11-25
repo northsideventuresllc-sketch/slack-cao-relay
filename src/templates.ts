@@ -2,7 +2,7 @@
 // words, no jargon, never the word "fired", never an unfilled slot, never a
 // link that does not exist. None of these ever carries the start pattern.
 
-import type { CtoEntry } from './config.js';
+import type { CaoEntry } from './config.js';
 
 /**
  * C1-FU-4: the task text embedded in a short reply is clamped to 10 words (plus "…"),
@@ -19,8 +19,8 @@ export const T = {
   startedAutomatically: (task: string, fireId: string): string =>
     `Started: ${short(task)} — fire id ${fireId} — started automatically — run link to follow.`,
   /** D4/D6: manual adapter short reply. */
-  queuedForPerson: (task: string, fireId: string, cto: CtoEntry): string =>
-    `Started: ${short(task)} — fire id ${fireId} — queued for a person. Muse CAO will start it in ${cto.home}.`,
+  queuedForPerson: (task: string, fireId: string, cao: CaoEntry): string =>
+    `Started: ${short(task)} — fire id ${fireId} — queued for a person. Muse CAO will start it in ${cao.home}.`,
   brainDown: (task: string, fireId: string): string => `Queued. Brain is down. Will retry. Task: ${short(task)} — fire id ${fireId}.`,
   /** D4 manual state machine: both the relay and the manual path down. */
   waitingBothDown: (task: string, fireId: string): string =>
@@ -53,29 +53,29 @@ export const T = {
     `The start for fire id ${fireId} was not recorded properly, so it will not run. Please re-send it.`,
   pending: (lines: string[]): string => `Pending starts: ${lines.join('; ')}`,
   /** D5 step 3 / Appendix A (d): the map. Log and Session each on their own line. */
-  map: (done: string, logLabel: string, logUrl: string, session: string, stillOpen: string, ctos: CtoEntry[]): string =>
+  map: (done: string, logLabel: string, logUrl: string, session: string, stillOpen: string, caos: CaoEntry[]): string =>
     [
       `Done: ${done}`,
       `Log: <${logUrl}|${logLabel}>`,
       `Session: ${session}`,
       `Still open: ${stillOpen}`,
       '',
-      ctos.map((c) => `<@${c.botUserId}>`).join(' '),
+      caos.map((c) => `<@${c.botUserId}>`).join(' '),
     ].join('\n'),
-  /** D5 step 3: the one-line pointer in #cto-bots, tagging all four. */
-  pointer: (outcome: string, mapLink: string, ctos: CtoEntry[]): string =>
-    `Close-out: ${outcome}. Map is here: ${mapLink} ${ctos.map((c) => `<@${c.botUserId}>`).join(' ')}`,
+  /** D5 step 3: the one-line pointer in #cao-bots, tagging all four. */
+  pointer: (outcome: string, mapLink: string, caos: CaoEntry[]): string =>
+    `Close-out: ${outcome}. Map is here: ${mapLink} ${caos.map((c) => `<@${c.botUserId}>`).join(' ')}`,
   /** R7-NEW-1: posted to the CAO's channel when the sweep flags a stalled run. */
   stalled: (fireId: string): string => `No activity for 6 hours on fire id ${fireId}. It may be stalled. Muse CAO has been told.`,
   /** R7-NEW-5: the poller's own liveness (the dead-alerter fallback). */
   pollerDown: (): string => 'The mini poller has stopped answering. Failover alerts are paused. Muse CAO has been told.',
   pollerBack: (): string => 'The mini poller is back.',
   /** R5-FU-9: the nightly off-host copy check found brain rows with no journal record in the copy. */
-  copyGap: (cto: CtoEntry, n: number): string => `Nightly copy check: ${n} start(s) for ${cto.displayName} are missing from the journal copy. Muse CAO has been told.`,
+  copyGap: (cao: CaoEntry, n: number): string => `Nightly copy check: ${n} start(s) for ${cao.displayName} are missing from the journal copy. Muse CAO has been told.`,
   /** R7-NEW-3: a start-retry held in memory was lost when the relay restarted. */
   retryLost: (): string => 'A start waiting for its one retry was lost when the relay restarted. Please re-send it.',
-  relayDown: (cto: CtoEntry): string => `${cto.displayName} relay is down. Starts for ${cto.displayName} are paused. Muse CAO has been told.`,
-  relayBack: (cto: CtoEntry): string => `${cto.displayName} relay is back.`,
+  relayDown: (cao: CaoEntry): string => `${cao.displayName} relay is down. Starts for ${cao.displayName} are paused. Muse CAO has been told.`,
+  relayBack: (cao: CaoEntry): string => `${cao.displayName} relay is back.`,
   dailyOpen: (open: string[], owed: string[], pending: string[], stalled: string[]): string =>
     [
       'Daily 9am open.',

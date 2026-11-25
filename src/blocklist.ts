@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import type { CtoEntry } from './config.js';
+import type { CaoEntry } from './config.js';
 
 const BlocklistFileSchema = z.object({
   keyPatterns: z.array(z.string()),
@@ -77,8 +77,8 @@ export class Blocklist {
 const MENTION = String.raw`<@[A-Z0-9]+(?:\|[^>]*)?>`;
 
 /** Plain-text CAO names, as a CAO might type them before the poster turns them into mentions. */
-export function plainNamePattern(ctos: CtoEntry[]): string {
-  const names = ctos.map((c) => c.displayName.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m));
+export function plainNamePattern(caos: CaoEntry[]): string {
+  const names = caos.map((c) => c.displayName.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m));
   return `@(?:${names.join('|')})`;
 }
 
@@ -86,21 +86,21 @@ export function plainNamePattern(ctos: CtoEntry[]): string {
  * The strip (D2): delete any mention plus `fire:` plus the following task words.
  * Applied by the poster to POST-QUEUE text only; start-queue entries are never stripped.
  */
-export function stripStartPattern(text: string, ctos: CtoEntry[]): string {
-  const re = new RegExp(`(?:${MENTION}|${plainNamePattern(ctos)})\\s*fire:[^\\n]*`, 'giu');
+export function stripStartPattern(text: string, caos: CaoEntry[]): string {
+  const re = new RegExp(`(?:${MENTION}|${plainNamePattern(caos)})\\s*fire:[^\\n]*`, 'giu');
   return text.replace(re, '').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /** True if text carries the start pattern (mention + fire:). Used to assert relay templates never do. */
-export function containsStartPattern(text: string, ctos: CtoEntry[]): boolean {
-  const re = new RegExp(`(?:${MENTION}|${plainNamePattern(ctos)})\\s*fire:`, 'iu');
+export function containsStartPattern(text: string, caos: CaoEntry[]): boolean {
+  const re = new RegExp(`(?:${MENTION}|${plainNamePattern(caos)})\\s*fire:`, 'iu');
   return re.test(text);
 }
 
 /** D3: turn plain "@Claude CAO" names into real mentions. Longest names first so "AXON-Hermes CAO" wins. */
-export function toRealMentions(text: string, ctos: CtoEntry[]): string {
+export function toRealMentions(text: string, caos: CaoEntry[]): string {
   let out = text;
-  const sorted = [...ctos].sort((a, b) => b.displayName.length - a.displayName.length);
+  const sorted = [...caos].sort((a, b) => b.displayName.length - a.displayName.length);
   for (const c of sorted) {
     const esc = c.displayName.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m);
     out = out.replace(new RegExp(`@${esc}\\b`, 'g'), `<@${c.botUserId}>`);

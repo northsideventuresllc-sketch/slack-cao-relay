@@ -7,6 +7,7 @@
 import { join } from 'node:path';
 import { cpuUsage, memoryUsage } from 'node:process';
 import { Alerter } from './alerts.js';
+import { withLegacyEnv } from './legacy.js';
 import { makeAdapter } from './adapters/handoff.js';
 import { Blocklist } from './blocklist.js';
 import { DirectBrain, type BrainApi } from './brain.js';
@@ -71,7 +72,7 @@ export class RelayProgram {
   private duties: MuseDuties | null = null;
 
   constructor(private readonly cfg: RelayConfig) {
-    this.log = createLogger(`cto-relay-${cfg.cto.key}`, cfg.logLevel);
+    this.log = createLogger(`cao-relay-${cfg.cao.key}`, cfg.logLevel);
   }
 
   async run(): Promise<number> {
@@ -97,17 +98,17 @@ export class RelayProgram {
 
   private async start(): Promise<void> {
     const cfg = this.cfg;
-    const cto = cfg.cto;
-    const isMuse = cto.key === 'muse';
+    const cao = cfg.cao;
+    const isMuse = cao.key === 'muse';
 
-    const blocked = placeholdersBlocking(cfg.registry, cto.key);
-    if (blocked.length) throw new Fatal(EXIT_STAY_DOWN, `config placeholders unset in config/registry.json (CTO_RELAY_REGISTRY): ${blocked.join(',')}`);
+    const blocked = placeholdersBlocking(cfg.registry, cao.key);
+    if (blocked.length) throw new Fatal(EXIT_STAY_DOWN, `config placeholders unset in config/registry.json (CAO_RELAY_REGISTRY): ${blocked.join(',')}`);
 
     ensureDir(cfg.stateDir, 0o700);
     const appToken = readCredential(cfg.credentialsDir, CRED_SLACK_APP);
     const botToken = readCredential(cfg.credentialsDir, CRED_SLACK_BOT);
 
-    const alerter = new Alerter(cfg.stateDir, cto.key, cto.agentName, this.clock, this.log);
+    const alerter = new Alerter(cfg.stateDir, cao.key, cao.agentName, this.clock, this.log);
     const alert = (code: string, ids?: Record<string, string | number | null>): void => alerter.alert(code, ids);
 
     // Brain: Muse holds the key (D7); the other three go through the Muse program's broker.
@@ -116,7 +117,7 @@ export class RelayProgram {
       if (!cfg.supabaseUrl) throw new Fatal(EXIT_STAY_DOWN, 'SUPABASE_URL not set');
       brain = new DirectBrain({ supabaseUrl: cfg.supabaseUrl, apiKey: readCredential(cfg.credentialsDir, CRED_BRAIN), httpsProxy: cfg.httpsProxy, timeoutMs: 1500 });
     } else {
-      brain = new BrokeredBrain(brokerSocketPath(cfg.runDir, cto.key));
+      brain = new BrokeredBrain(brokerSocketPath(cfg.runDir, cao.key));
     }
     try {
       await brain.ping();
@@ -127,10 +128,10 @@ export class RelayProgram {
 
     if (isMuse) {
       this.broker = new BrokerServer(brain, cfg.runDir, this.log);
-      this.broker.start(cfg.registry.ctos.filter((c) => c.adapter === 'manual' && !isPlaceholder(c.agentName)));
+      this.broker.start(cfg.registry.caos.filter((c) => c.adapter === 'manual' && !isPlaceholder(c.agentName)));
     }
 
-    const lease = new LeaseManager(brain, cto.key, `${cfg.holder}:cto-relay-${cto.key}`, this.clock, this.log, (code) => alert(code));
+    const lease = new LeaseManager(brain, cao.key, `${cfg.holder}:cao-relay-${cao.key}`, this.clock, this.log, (code) => alert(code));
     this.lease = lease;
     try {
       await lease.acquire();
@@ -150,7 +151,7 @@ export class RelayProgram {
       return e && e.terminal ? e.state : null;
     });
     dedup.loadFromJournal(journal.all());
-    const runlog = new RunLog(cfg.stateDir, cto.key, this.clock);
+    const runlog = new RunLog(cfg.stateDir, cao.key, this.clock);
     const blocklist = Blocklist.fromFile(cfg.blocklistPath);
     const metrics = new Metrics();
 
@@ -167,18 +168,18 @@ export class RelayProgram {
     this.slack = slack;
     try {
       const me = await slack.authTest();
-      if (me.userId !== cto.botUserId) throw new Fatal(EXIT_STAY_DOWN, 'bot token belongs to a different bot user');
+      if (me.userId !== cao.botUserId) throw new Fatal(EXIT_STAY_DOWN, 'bot token belongs to a different bot user');
     } catch (err) {
       if (err instanceof Fatal) throw err;
       alert('token-revoked-or-invalid');
       throw new Fatal(EXIT_STAY_DOWN, 'Slack bot token rejected (fails closed for this CAO only)');
     }
 
-    const poster = new Poster(slack, lease, blocklist, cfg.registry.ctos, runlog, this.log, alert);
-    const adapter = makeAdapter(brain, cto, this.clock);
+    const poster = new Poster(slack, lease, blocklist, cfg.registry.caos, runlog, this.log, alert);
+    const adapter = makeAdapter(brain, cao, this.clock);
     const serialize = <T,>(fn: () => Promise<T>): Promise<T> => this.lane.run(fn);
     const core = new RelayCore({
-      cto,
+      cao,
       registry: cfg.registry,
       timezone: cfg.timezone,
       clock: this.clock,
@@ -188,8 +189,8 @@ export class RelayProgram {
       journal,
       book,
       dedup,
-      breaker: new Breaker(journal, cto.key),
-      caps: new CostEnvelope(cfg.registry.caps, cto, journal, cfg.timezone),
+      breaker: new Breaker(journal, cao.key),
+      caps: new CostEnvelope(cfg.registry.caps, cao, journal, cfg.timezone),
       quarantine: new Quarantine(cfg.stateDir, this.clock),
       runlog,
       poster,
@@ -202,10 +203,10 @@ export class RelayProgram {
     const maintenance = new Maintenance(core, serialize);
     const outbox = new Outbox(cfg.stateDir);
     const vaultReadKey = cfg.credentialsDir ? join(cfg.credentialsDir, 'vault-read-key') : null;
-    const closeouts = new Closeouts(core, outbox, new GitVaultReader(cfg.vaultDir, cfg.vaultWebBase, 'main', vaultReadKey, '/etc/cto-relay/known_hosts', cfg.vaultRepoUrl), core.d.caps, serialize);
+    const closeouts = new Closeouts(core, outbox, new GitVaultReader(cfg.vaultDir, cfg.vaultWebBase, 'main', vaultReadKey, '/etc/cao-relay/known_hosts', cfg.vaultRepoUrl), core.d.caps, serialize);
 
     this.health = new HealthServer({
-      cto: cto.key,
+      cao: cao.key,
       metrics,
       queueDepth: () => book.depth(),
       lease: () => lease.snapshot(),
@@ -214,12 +215,12 @@ export class RelayProgram {
       startedAt: this.clock(),
     });
     try {
-      await this.health.listen(cfg.healthBind, cto.healthPort);
+      await this.health.listen(cfg.healthBind, cao.healthPort);
     } catch {
       throw new Fatal(EXIT_RETRY, 'health endpoint bind failed');
     }
 
-    this.control = new ControlServer(controlSocketPath(cfg.runDir, cto.key), (c) => this.lane.run(() => this.command(c, core, closeouts, journal)), this.log);
+    this.control = new ControlServer(controlSocketPath(cfg.runDir, cao.key), (c) => this.lane.run(() => this.command(c, core, closeouts, journal)), this.log);
     this.control.start();
 
     // Restore (D6 steps 1–5) and the reconciler, before taking new events.
@@ -294,7 +295,7 @@ export class RelayProgram {
       }
     });
     this.watchdog(alert);
-    this.log.info('relay up', { cto: cto.key, epoch: lease.currentEpoch(), holder: cfg.holder });
+    this.log.info('relay up', { cao: cao.key, epoch: lease.currentEpoch(), holder: cfg.holder });
   }
 
   private async command(c: ControlCommand, core: RelayCore, closeouts: Closeouts, journal: Journal): Promise<unknown> {
@@ -317,7 +318,7 @@ export class RelayProgram {
       case 'copy-check': {
         // R5-FU-9: nightly off-host copy vs brain rows (Muse program only — it holds the brain key).
         if (!this.duties) return { ok: false, reason: 'muse-only' };
-        const target = this.cfg.registry.ctos.find((x) => x.key === c.target);
+        const target = this.cfg.registry.caos.find((x) => x.key === c.target);
         if (!target || isPlaceholder(target.agentName)) return { ok: false, reason: 'unknown-target' };
         return { ok: true, ...(await this.duties.copyCheck(target, c.ids)) };
       }
@@ -329,7 +330,7 @@ export class RelayProgram {
       case 'status':
         return this.health?.snapshot();
       case 'test-fail-next-journal-write':
-        if (process.env.CTO_RELAY_ENABLE_TEST_HOOKS !== '1') return { ok: false, reason: 'test hooks disabled' };
+        if (withLegacyEnv().CAO_RELAY_ENABLE_TEST_HOOKS !== '1') return { ok: false, reason: 'test hooks disabled' };
         journal.faults.failNextWrite = true;
         return { ok: true };
     }
@@ -339,12 +340,12 @@ export class RelayProgram {
   private async postQueueEntry(e: PostQueueEntry, core: RelayCore, poster: Poster): Promise<void> {
     const reg = this.cfg.registry;
     if (e.kind === 'post') {
-      const target = e.channel === 'cto-bots' ? reg.ctoBotsChannelId : reg.ctos.find((c) => c.channelName === e.channel)?.channelId;
+      const target = e.channel === 'cao-bots' ? reg.caoBotsChannelId : reg.caos.find((c) => c.channelName === e.channel)?.channelId;
       if (!target) return void this.log.warn('post-queue: unknown channel');
-      await poster.post(target, e.text, 'cto-words');
+      await poster.post(target, e.text, 'cao-words');
       return;
     }
-    const target = reg.ctos.find((c) => c.key === e.cto);
+    const target = reg.caos.find((c) => c.key === e.cao);
     if (!target) return;
     if (core.d.blocklist.check(e.task).length > 0) {
       core.d.alert('post-queue-fire-blocked', {});

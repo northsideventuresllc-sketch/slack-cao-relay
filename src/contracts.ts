@@ -60,7 +60,7 @@ export interface JournalRecord {
   claimName?: string;
   windowStart?: string;
   // EXTENSION fields — ids and hashes only, never task text (D6 redaction):
-  cto?: string; // CAO key (muse | claude | gemini | axon-hermes)
+  cao?: string; // CAO key (muse | claude | gemini | axon-hermes)
   state?: FireJournalState; // fire-state: the state this record moves the fire to
   channelId?: string; // fire-request: where the requester is watching
   normHash?: string; // fire-request: SHA-256 of the normalized task (task dedup)
@@ -140,7 +140,7 @@ export interface HealthResponse {
 
 export interface FireRequest {
   task: string; // the task text, at most 280 characters
-  epoch: number; // the lease fencing token; checked against cto_relay_lease before firing
+  epoch: number; // the lease fencing token; checked against cao_relay_lease before firing
   meta?: FireMeta; // EXTENSION: routing context the adapter writes into the brain row
 }
 

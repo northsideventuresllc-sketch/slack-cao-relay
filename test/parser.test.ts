@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseAbort, parseStart, REPLY_EMPTY, REPLY_MULTI, REPLY_NOT_FIRE_COMMAND, REPLY_TOO_LONG } from '../src/parser.js';
-import { ctoEntry } from '../src/config.js';
+import { caoEntry } from '../src/config.js';
 import { normalizeTask } from '../src/util/hash.js';
 import type { SlackEvent } from '../src/contracts.js';
 import { testRegistry } from './helpers.js';
 
 const reg = testRegistry();
-const claude = ctoEntry(reg, 'claude');
-const muse = ctoEntry(reg, 'muse');
+const claude = caoEntry(reg, 'claude');
+const muse = caoEntry(reg, 'muse');
 const ev = (text: string, extra: Partial<SlackEvent> = {}): SlackEvent => ({
   eventId: 'Ev1',
   channelId: claude.channelId,
@@ -48,8 +48,8 @@ test('empty, too long, multiple mentions', () => {
 });
 
 test('a close-out map tagging all four never starts work', () => {
-  const map = `Done: x\nLog: <https://e.invalid|l>\nSession: s\nStill open: None\n\n${reg.ctos.map((c) => `<@${c.botUserId}>`).join(' ')}`;
-  for (const c of reg.ctos) assert.equal(parseStart(ev(map, { channelId: c.channelId }), c, reg).kind, 'ignore');
+  const map = `Done: x\nLog: <https://e.invalid|l>\nSession: s\nStill open: None\n\n${reg.caos.map((c) => `<@${c.botUserId}>`).join(' ')}`;
+  for (const c of reg.caos) assert.equal(parseStart(ev(map, { channelId: c.channelId }), c, reg).kind, 'ignore');
 });
 
 test('slash commands: own /fire command starts; any other command gets the fixed reply', () => {

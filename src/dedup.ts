@@ -22,9 +22,9 @@ export function eventKey(ev: SlackEvent, nowMs: number): string {
   return sha256(`ctx:${ev.channelId}:${ev.authorId}:${sha256(ev.text)}:${minute}`);
 }
 
-export function idempotencyKey(cto: string, task: string, nowMs: number): string {
+export function idempotencyKey(cao: string, task: string, nowMs: number): string {
   const minute = Math.floor(nowMs / MIN);
-  return sha256(`idem:${cto}:${normalizeTask(task)}:${minute}`);
+  return sha256(`idem:${cao}:${normalizeTask(task)}:${minute}`);
 }
 
 export type DedupVerdict = 'ok' | 'event-duplicate' | 'idempotency-duplicate' | 'task-duplicate';

@@ -3,7 +3,7 @@
 // a member of all five CAO channels).
 
 import { relayEvidence, type BrainApi, type FireRow, type RelayEvidence } from './brain.js';
-import { isPlaceholder, type CtoEntry, type Registry } from './config.js';
+import { isPlaceholder, type CaoEntry, type Registry } from './config.js';
 import type { Poster } from './poster.js';
 import { T, isRelayTemplate } from './templates.js';
 import type { Logger } from './util/log.js';
@@ -66,7 +66,7 @@ export function assessRun(a: RunActivity): { stillActive: boolean; stalled: bool
 }
 
 export interface SweepFinding {
-  cto: string;
+  cao: string;
   fireId: string;
   kind: 'stalled' | 'unclosed';
 }
@@ -94,17 +94,17 @@ export class MuseDuties {
     private readonly tz: string = 'America/New_York',
   ) {}
 
-  private ctos(): CtoEntry[] {
-    return this.registry.ctos.filter((c) => !isPlaceholder(c.agentName));
+  private caos(): CaoEntry[] {
+    return this.registry.caos.filter((c) => !isPlaceholder(c.agentName));
   }
 
-  private async lastCtoMessageAt(cto: CtoEntry): Promise<number | null> {
+  private async lastCaoMessageAt(cao: CaoEntry): Promise<number | null> {
     try {
       const oldest = String((this.clock() - DAY) / 1000);
-      const msgs = await this.slack.history(cto.channelId, oldest);
+      const msgs = await this.slack.history(cao.channelId, oldest);
       let last: number | null = null;
       for (const m of msgs) {
-        if (m.user !== cto.botUserId || isRelayTemplate(m.text)) continue;
+        if (m.user !== cao.botUserId || isRelayTemplate(m.text)) continue;
         const at = Number(m.ts) * 1000;
         if (Number.isFinite(at) && (last === null || at > last)) last = at;
       }
@@ -124,16 +124,16 @@ export class MuseDuties {
   async sweep(opts: { post?: boolean } = {}): Promise<SweepFinding[]> {
     const now = this.clock();
     const out: SweepFinding[] = [];
-    for (const cto of this.ctos()) {
+    for (const cao of this.caos()) {
       let rows: FireRow[];
       try {
-        rows = await this.brain.listFireRows(cto.agentName, ['claimed', 'started', 'linked']);
+        rows = await this.brain.listFireRows(cao.agentName, ['claimed', 'started', 'linked']);
       } catch {
-        this.log.warn('sweep: brain unreachable', { cto: cto.key });
+        this.log.warn('sweep: brain unreachable', { cao: cao.key });
         continue;
       }
       if (rows.length === 0) continue;
-      const msgAt = await this.lastCtoMessageAt(cto);
+      const msgAt = await this.lastCaoMessageAt(cao);
       for (const row of rows) {
         const ev = relayEvidence(row);
         const progress = Date.parse(ev?.last_progress_at ?? row.fired_at ?? '');
@@ -145,15 +145,15 @@ export class MuseDuties {
           now,
         });
         if (verdict.stalled) {
-          out.push({ cto: cto.key, fireId: row.id, kind: 'stalled' });
+          out.push({ cao: cao.key, fireId: row.id, kind: 'stalled' });
           const key = `${row.id}|${verdict.lastActivity ?? 'none'}`;
           if (opts.post !== false && !this.stallPosted.has(key)) {
             this.stallPosted.add(key);
-            this.alert('run-stalled', { cto: cto.key, fireId: row.id });
-            await this.poster.post(cto.channelId, T.stalled(row.id), 'template', row.id);
+            this.alert('run-stalled', { cao: cao.key, fireId: row.id });
+            await this.poster.post(cao.channelId, T.stalled(row.id), 'template', row.id);
           }
         }
-        if (verdict.unclosed) out.push({ cto: cto.key, fireId: row.id, kind: 'unclosed' });
+        if (verdict.unclosed) out.push({ cao: cao.key, fireId: row.id, kind: 'unclosed' });
       }
     }
     this.findings = out;
@@ -163,51 +163,51 @@ export class MuseDuties {
   /** 9am: clear the already-running lock of runs stalled 6 hours (D4 lock-clear actor: the Muse relay program). */
   async clearStalledLocks(): Promise<void> {
     const now = this.clock();
-    for (const cto of this.ctos()) {
-      const rows = await this.brain.listFireRows(cto.agentName, ['claimed', 'started', 'linked']).catch(() => [] as FireRow[]);
+    for (const cao of this.caos()) {
+      const rows = await this.brain.listFireRows(cao.agentName, ['claimed', 'started', 'linked']).catch(() => [] as FireRow[]);
       for (const row of rows) {
         const ev = relayEvidence(row);
         if (!ev || ev.lock_cleared) continue;
         const progress = Date.parse(ev.last_progress_at ?? row.fired_at ?? '');
         if (!Number.isFinite(progress) || now - progress < STALL_MS) continue;
-        const next: RelayEvidence = { ...ev, v: ev.v + 1, lock_cleared: { by: 'cto-relay-muse', at: iso(now) } };
+        const next: RelayEvidence = { ...ev, v: ev.v + 1, lock_cleared: { by: 'cao-relay-muse', at: iso(now) } };
         const ok = await this.brain.patchFireRow(row.id, { evidence: next }, { version: ev.v }).catch(() => null);
-        if (ok) this.log.info('stalled lock cleared', { cto: cto.key, fireId: row.id });
+        if (ok) this.log.info('stalled lock cleared', { cao: cao.key, fireId: row.id });
       }
     }
   }
 
-  /** 9am: the daily open in #cto-bots — what is open, what each CAO owes, pending starts, and sweep warnings. */
+  /** 9am: the daily open in #cao-bots — what is open, what each CAO owes, pending starts, and sweep warnings. */
   async dailyOpen(): Promise<void> {
     const now = this.clock();
     const open: string[] = [];
     const owed: string[] = [];
     const pending: string[] = [];
-    for (const cto of this.ctos()) {
-      const closed = await this.brain.listFireRows(cto.agentName, ['closed']).catch(() => [] as FireRow[]);
+    for (const cao of this.caos()) {
+      const closed = await this.brain.listFireRows(cao.agentName, ['closed']).catch(() => [] as FireRow[]);
       for (const row of closed) {
         if (now - Date.parse(row.completed_at ?? '') > DAY) continue;
         const items = (relayEvidence(row)?.closeout?.still_open ?? 'None').split(';').map((s) => s.trim()).filter((s) => s && s !== 'None');
         for (const it of items) {
-          open.push(`${cto.displayName}: ${it}`);
+          open.push(`${cao.displayName}: ${it}`);
           const m = /Owner:\s*(.+?)\.?$/i.exec(it);
           if (m?.[1]) owed.push(`${m[1]} — ${it.replace(/\s*Owner:.*$/i, '')}`);
         }
       }
-      const queued = await this.brain.listFireRows(cto.agentName, ['queued']).catch(() => [] as FireRow[]);
-      for (const row of queued) pending.push(`${cto.displayName} — fire id ${row.id}`);
+      const queued = await this.brain.listFireRows(cao.agentName, ['queued']).catch(() => [] as FireRow[]);
+      for (const row of queued) pending.push(`${cao.displayName} — fire id ${row.id}`);
     }
-    const byId = new Map<string, string>(this.registry.ctos.map((c) => [c.key, c.displayName]));
-    const stalled = this.findings.map((f) => `${byId.get(f.cto) ?? f.cto} fire id ${f.fireId}${f.kind === 'unclosed' ? ' (not closed after 24 hours)' : ''}`);
-    await this.poster.post(this.registry.ctoBotsChannelId, T.dailyOpen(open, owed, pending, stalled), 'template');
+    const byId = new Map<string, string>(this.registry.caos.map((c) => [c.key, c.displayName]));
+    const stalled = this.findings.map((f) => `${byId.get(f.cao) ?? f.cao} fire id ${f.fireId}${f.kind === 'unclosed' ? ' (not closed after 24 hours)' : ''}`);
+    await this.poster.post(this.registry.caoBotsChannelId, T.dailyOpen(open, owed, pending, stalled), 'template');
   }
 
   /**
    * Nightly: brain rows are retained 90 days, then archived to the vault (D6
    * store table). R7-FU-12 — home and format: terminal start rows older than
-   * 90 days are exported to /var/lib/cto-relay/muse/archive/brain-archive-<YYYY-MM>.jsonl
+   * 90 days are exported to /var/lib/cao-relay/muse/archive/brain-archive-<YYYY-MM>.jsonl
    * (JSON lines, one full agent_comms row per line, task text in `body`) and marked
-   * `archived_at`. The nightly cto-relay-offhost-copy.sh files that directory into
+   * `archived_at`. The nightly cao-relay-offhost-copy.sh files that directory into
    * the vault at $VAULT_ARCHIVE_PATH within a day, where the retrieval test can
    * find it. Rows are NOT deleted from the brain: deletion after archive is a
    * COUNCIL GATE decision.
@@ -216,8 +216,8 @@ export class MuseDuties {
     const now = this.clock();
     let n = 0;
     let archived: Set<string> | null = null;
-    for (const cto of this.ctos()) {
-      const rows = await this.brain.listFireRows(cto.agentName, ['closed', 'failed', 'expired', 'refused', 'cancelled']).catch(() => [] as FireRow[]);
+    for (const cao of this.caos()) {
+      const rows = await this.brain.listFireRows(cao.agentName, ['closed', 'failed', 'expired', 'refused', 'cancelled']).catch(() => [] as FireRow[]);
       for (const row of rows) {
         const ev = relayEvidence(row);
         const done = Date.parse(row.completed_at ?? row.fired_at ?? '');
@@ -238,10 +238,10 @@ export class MuseDuties {
 
   /**
    * R7-NEW-5 — breaks the dead-alerter circle. The mini poller writes its own
-   * cto_heartbeat row (agent MINI-POLLER) every minute; this program checks it
-   * every minute. Stale over 5 minutes → alert + visible post in #cto-bots, once
+   * cao_heartbeat row (agent MINI-POLLER) every minute; this program checks it
+   * every minute. Stale over 5 minutes → alert + visible post in #cao-bots, once
    * per incident. If BOTH this program and the poller are down, Claude CAO's
-   * own 9am check-in (`cto-relay checkin-report`) shows both stale heartbeats.
+   * own 9am check-in (`cao-relay checkin-report`) shows both stale heartbeats.
    */
   async watchPoller(): Promise<void> {
     let age: number;
@@ -254,31 +254,31 @@ export class MuseDuties {
     if (age > POLLER_STALE_MS && !this.pollerDown) {
       this.pollerDown = true;
       this.alert('mini-poller-stale', { ageMs: Number.isFinite(age) ? age : null });
-      await this.poster.post(this.registry.ctoBotsChannelId, T.pollerDown(), 'template');
+      await this.poster.post(this.registry.caoBotsChannelId, T.pollerDown(), 'template');
     } else if (age <= POLLER_STALE_MS && this.pollerDown) {
       this.pollerDown = false;
-      await this.poster.post(this.registry.ctoBotsChannelId, T.pollerBack(), 'template');
+      await this.poster.post(this.registry.caoBotsChannelId, T.pollerBack(), 'template');
     }
   }
 
   /**
    * R5-FU-9 — the nightly off-host copy check against the brain rows. `copyIds`
-   * are the fire ids found in last night's journal copy for `cto`. Any brain row
+   * are the fire ids found in last night's journal copy for `cao`. Any brain row
    * fired 1–23 hours ago (not refused) with no id in the copy is a gap: posted in
-   * #cto-bots and alerted.
+   * #cao-bots and alerted.
    */
-  async copyCheck(cto: CtoEntry, copyIds: string[]): Promise<{ gap: number }> {
+  async copyCheck(cao: CaoEntry, copyIds: string[]): Promise<{ gap: number }> {
     const now = this.clock();
     const seen = new Set(copyIds);
     const statuses = ['queued', 'claimed', 'started', 'linked', 'closed', 'failed', 'expired', 'cancelled'];
-    const rows = await this.brain.listFireRows(cto.agentName, statuses);
+    const rows = await this.brain.listFireRows(cao.agentName, statuses);
     const gap = rows.filter((r) => {
       const at = Date.parse(r.fired_at ?? '');
       return Number.isFinite(at) && now - at >= HOUR && now - at <= 23 * HOUR && !seen.has(r.id);
     });
     if (gap.length > 0) {
-      this.alert('offhost-copy-gap', { cto: cto.key, gap: gap.length });
-      await this.poster.post(this.registry.ctoBotsChannelId, T.copyGap(cto, gap.length), 'template');
+      this.alert('offhost-copy-gap', { cao: cao.key, gap: gap.length });
+      await this.poster.post(this.registry.caoBotsChannelId, T.copyGap(cao, gap.length), 'template');
     }
     return { gap: gap.length };
   }
@@ -298,15 +298,15 @@ export class MuseDuties {
     const now = this.clock();
     const until = startOfLocalWeek(now, this.tz);
     const since = startOfLocalWeek(until - 1, this.tz);
-    const perCto: Record<string, number> = {};
+    const perCao: Record<string, number> = {};
     let total = 0;
     let tokens = 0;
     let unmetered = 0;
-    for (const cto of this.ctos()) {
-      const n = await this.brain.countStarts(iso(since), cto.agentName, iso(until));
-      perCto[cto.key] = n;
+    for (const cao of this.caos()) {
+      const n = await this.brain.countStarts(iso(since), cao.agentName, iso(until));
+      perCao[cao.key] = n;
       total += n;
-      const closed = await this.brain.listFireRows(cto.agentName, ['closed']).catch(() => [] as FireRow[]);
+      const closed = await this.brain.listFireRows(cao.agentName, ['closed']).catch(() => [] as FireRow[]);
       for (const r of closed) {
         const done = Date.parse(r.completed_at ?? '');
         if (!Number.isFinite(done) || done < since || done >= until) continue;
@@ -323,7 +323,7 @@ export class MuseDuties {
       weekStart: iso(since),
       weekEnd: iso(until),
       startsTotal: total,
-      startsPerCto: perCto,
+      startsPerCao: perCao,
       firedRunTokens: tokens,
       unmeteredRuns: unmetered,
       weeklyTokenShare,
@@ -342,20 +342,20 @@ export class MuseDuties {
 
   /** Every minute: the visible failure for a sibling program that is down (e.g. its token was revoked). */
   async watchSiblings(): Promise<void> {
-    for (const cto of this.ctos()) {
-      if (cto.key === 'muse') continue;
-      const up = await this.fetchHealth(cto.healthPort).catch(() => false);
+    for (const cao of this.caos()) {
+      if (cao.key === 'muse') continue;
+      const up = await this.fetchHealth(cao.healthPort).catch(() => false);
       if (up) {
-        this.siblingFails.set(cto.key, 0);
-        if (this.siblingDown.delete(cto.key)) await this.poster.post(this.registry.ctoBotsChannelId, T.relayBack(cto), 'template');
+        this.siblingFails.set(cao.key, 0);
+        if (this.siblingDown.delete(cao.key)) await this.poster.post(this.registry.caoBotsChannelId, T.relayBack(cao), 'template');
         continue;
       }
-      const n = (this.siblingFails.get(cto.key) ?? 0) + 1;
-      this.siblingFails.set(cto.key, n);
-      if (n >= 3 && !this.siblingDown.has(cto.key)) {
-        this.siblingDown.add(cto.key);
-        this.alert('sibling-relay-down', { cto: cto.key });
-        await this.poster.post(this.registry.ctoBotsChannelId, T.relayDown(cto), 'template');
+      const n = (this.siblingFails.get(cao.key) ?? 0) + 1;
+      this.siblingFails.set(cao.key, n);
+      if (n >= 3 && !this.siblingDown.has(cao.key)) {
+        this.siblingDown.add(cao.key);
+        this.alert('sibling-relay-down', { cao: cao.key });
+        await this.poster.post(this.registry.caoBotsChannelId, T.relayDown(cao), 'template');
       }
     }
   }
@@ -365,7 +365,7 @@ export interface WeeklyReview {
   weekStart: string;
   weekEnd: string;
   startsTotal: number;
-  startsPerCto: Record<string, number>;
+  startsPerCao: Record<string, number>;
   firedRunTokens: number;
   unmeteredRuns: number;
   weeklyTokenShare: number;

@@ -1,48 +1,48 @@
-# /etc/systemd/system/cto-relay-claude.service
+# /etc/systemd/system/cao-relay-claude.service
 # Slack CAO Loop relay — Claude CAO. One of four separate services (PLAN-v7 D6):
 # shared code, separate process, separate service user, separate keys, queue and journal.
 #
-# Keys (D7): ExecStartPre runs /usr/local/bin/cto-relay-fetch-keys claude as root on EVERY
-# start; it fetches fresh from the Secure Vault into tmpfs /run/credentials/cto-relay-claude/
-# (dir 0500, files 0400, owner cto-relay-claude) and the process reads them from there
-# (CTO_RELAY_KEY_DIR). Files:
+# Keys (D7): ExecStartPre runs /usr/local/bin/cao-relay-fetch-keys claude as root on EVERY
+# start; it fetches fresh from the Secure Vault into tmpfs /run/credentials/cao-relay-claude/
+# (dir 0500, files 0400, owner cao-relay-claude) and the process reads them from there
+# (CAO_RELAY_KEY_DIR). Files:
 #   slack-app-token  (Socket Mode app-level token)
 #   slack-bot-token  (bot token)
 # No key value ever appears in this file.
 
 [Unit]
 Description=Slack CAO Loop relay — Claude CAO
-Documentation=file:///opt/cto-relay/docs/RELAY-RUNBOOK.md
-After=network-online.target cto-relay-muse.service
-Wants=network-online.target cto-relay-muse.service
+Documentation=file:///opt/cao-relay/docs/RELAY-RUNBOOK.md
+After=network-online.target cao-relay-muse.service
+Wants=network-online.target cao-relay-muse.service
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-User=cto-relay-claude
-Group=cto-relay-claude
-SupplementaryGroups=cto-relay-admin
-EnvironmentFile=/etc/cto-relay/relay.env
-Environment=CTO_RELAY_CTO=claude
-Environment=CTO_RELAY_KEY_DIR=/run/credentials/cto-relay-claude
-Environment=CTO_RELAY_STATE_DIR=/var/lib/cto-relay/claude
-Environment=CTO_RELAY_RUN_DIR=/run/cto-relay
-Environment=CTO_RELAY_HOLDER=vm
+User=cao-relay-claude
+Group=cao-relay-claude
+SupplementaryGroups=cao-relay-admin
+EnvironmentFile=/etc/cao-relay/relay.env
+Environment=CAO_RELAY_CAO=claude
+Environment=CAO_RELAY_KEY_DIR=/run/credentials/cao-relay-claude
+Environment=CAO_RELAY_STATE_DIR=/var/lib/cao-relay/claude
+Environment=CAO_RELAY_RUN_DIR=/run/cao-relay
+Environment=CAO_RELAY_HOLDER=vm
 # Each program reads back close-out logs from its own vault checkout (git fetch, read-only use).
-Environment=CTO_RELAY_VAULT_DIR=/var/lib/cto-relay/claude/vault
-ExecStartPre=+/usr/local/bin/cto-relay-fetch-keys claude
-ExecStart=/usr/bin/node /opt/cto-relay/dist/index.js run
-ExecStopPost=+/usr/local/bin/cto-relay-fetch-keys --wipe claude
+Environment=CAO_RELAY_VAULT_DIR=/var/lib/cao-relay/claude/vault
+ExecStartPre=+/usr/local/bin/cao-relay-fetch-keys claude
+ExecStart=/usr/bin/node /opt/cao-relay/dist/index.js run
+ExecStopPost=+/usr/local/bin/cao-relay-fetch-keys --wipe claude
 # Fail-closed: brain down / lease held elsewhere → exit 1 → retried every 30 s.
 # Exit 78 = stay down (revoked token, Socket Mode reconnects exhausted, config placeholders) → alert, no restart.
 Restart=on-failure
 RestartSec=30
 RestartPreventExitStatus=78
 
-StateDirectory=cto-relay/claude
+StateDirectory=cao-relay/claude
 StateDirectoryMode=0700
-# /run/cto-relay/<cto> (control socket) and /run/cto-relay/broker come from
-# /etc/tmpfiles.d/cto-relay.conf so the broker and admin groups can reach them.
+# /run/cao-relay/<cao> (control socket) and /run/cao-relay/broker come from
+# /etc/tmpfiles.d/cao-relay.conf so the broker and admin groups can reach them.
 UMask=0077
 
 # Isolation envelope (D6): MemoryMax=128M, CPUQuota=25%. The program's own watchdog
@@ -68,8 +68,8 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
-ReadWritePaths=/var/lib/cto-relay/claude /run/cto-relay
-ReadOnlyPaths=/opt/cto-relay /etc/cto-relay/relay.env
+ReadWritePaths=/var/lib/cao-relay/claude /run/cao-relay
+ReadOnlyPaths=/opt/cao-relay /etc/cao-relay/relay.env
 
 [Install]
 WantedBy=multi-user.target
