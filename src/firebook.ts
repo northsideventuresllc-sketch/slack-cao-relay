@@ -1,4 +1,4 @@
-// The per-CTO queue (D6): max 10, journal-backed. Each entry has a stable id
+// The per-CAO queue (D6): max 10, journal-backed. Each entry has a stable id
 // (the fire id) and an idempotency key. Order comes from the journal; content
 // (task text) stays in the brain rows — except a brain-down start, whose text
 // is held IN MEMORY ONLY until the brain write lands (D4 Muse adapter).
@@ -10,7 +10,7 @@ import { DAY } from './util/time.js';
 export const QUEUE_MAX = 10;
 export const LOCK_TTL_MS = DAY; // already-running lock expires 24 h after the run started, unless refreshed
 
-/** States that count as a state-changing run-log entry by the CTO's own adapter — they refresh the lock (D4). */
+/** States that count as a state-changing run-log entry by the CAO's own adapter — they refresh the lock (D4). */
 const PROGRESS_STATES: ReadonlySet<FireJournalState> = new Set<FireJournalState>(['claimed', 'started', 'linked', 'closed']);
 
 export interface FireEntry {
@@ -138,7 +138,7 @@ export class FireBook {
     return this.byId.get(id) ?? [...this.byId.values()].find((e) => e.provisionalId === id);
   }
 
-  /** Resolve a quoted fire id: exact, or a unique prefix of ≥8 characters among this CTO's fires. */
+  /** Resolve a quoted fire id: exact, or a unique prefix of ≥8 characters among this CAO's fires. */
   resolveQuoted(quoted: string): FireEntry | undefined {
     const exact = this.get(quoted);
     if (exact) return exact;
@@ -159,7 +159,7 @@ export class FireBook {
   /**
    * The already-running lock (D4), R3-NEW-10:
    * - held from acceptance until CLOSED (or another terminal state);
-   * - refreshed ONLY by a state-changing entry written by the CTO's own adapter
+   * - refreshed ONLY by a state-changing entry written by the CAO's own adapter
    *   (claim, start, link, close-out — PROGRESS_STATES); a bare log line never refreshes it;
    * - expires 24 h after the last such entry — evaluated ON READ, here, at every
    *   start attempt (no timer has to fire for the lock to clear);

@@ -43,7 +43,7 @@ test('empty, too long, multiple mentions', () => {
   assert.equal((parseStart(ev(`<@${claude.botUserId}> fire: ${'a'.repeat(281)}`), claude, reg) as { text: string }).text, REPLY_TOO_LONG);
   const multi = ev(`<@${claude.botUserId}> fire: x <@${muse.botUserId}>`);
   assert.deepEqual(parseStart(multi, claude, reg), { kind: 'reply', text: REPLY_MULTI, reason: 'multi-mention' });
-  // only the first-mentioned CTO's program replies
+  // only the first-mentioned CAO's program replies
   assert.equal(parseStart({ ...multi, channelId: muse.channelId }, muse, reg).kind, 'ignore');
 });
 

@@ -1,8 +1,8 @@
-# slack-cto-relay
+# slack-cao-relay
 
-The Slack CTO Loop relay: four small programs, one per CTO (Muse, Claude,
-Gemini, AXON-Hermes). They carry Slack messages between the CTOs, start CTO
-work from `/fire-<cto>` commands and `@<CTO> fire: <task>` mentions, and post
+The Slack CAO Loop relay: four small programs, one per CAO (Muse, Claude,
+Gemini, AXON-Hermes). They carry Slack messages between the CAOs, start CAO
+work from `/fire-<cto>` commands and `@<CAO> fire: <task>` mentions, and post
 the close-out map (Done / Log / Session / Still open) when a run finishes.
 
 Spec: PLAN-v7.md (approved, GO 91.35%). Live facts: RUNBOOK.md (wins where the
@@ -30,13 +30,13 @@ No secret is ever stored in this repo. Code asks for one secret for one job at r
 | Path | What |
 |---|---|
 | `src/` | The relay (TypeScript strict + Zod). `contracts.ts` holds the PLAN-v7 Contracts. |
-| `config/registry.json` | CTO registry: the single source for which adapter serves which CTO. |
+| `config/registry.json` | CAO registry: the single source for which adapter serves which CAO. |
 | `config/blocklist.json` | Post blocklist (canonical copy in the runbook). |
 | `supabase/migrations/` | Brain migration (`cto_relay_lease`, `cto_heartbeat`). |
 | `deploy/systemd/` | The four relay units, `cto-heartbeat`, and the off-host copy timer. |
 | `deploy/scripts/` | Key fetch hook, deploy, mini sync, off-host copy, mini poller and run wrappers. |
 | `docs/RELAY-RUNBOOK.md` | Deploy, operate, fail over, rebuild. |
-| `docs/PLAN-V7-ERRATA.md` | Round-7 plan-text fixes (VERDICT-r7) for Muse CTO to apply to PLAN-v7.md. |
+| `docs/PLAN-V7-ERRATA.md` | Round-7 plan-text fixes (VERDICT-r7) for Muse CAO to apply to PLAN-v7.md. |
 | `test/` | `node:test` suite (in-memory brain + Slack). |
 
 ## Checks

@@ -1,6 +1,6 @@
 // HarnessAdapter v1 implementations. Both write the brain row (agent_comms) as
 // the start record: for Muse it is the start request the mailbox drain picks
-// up; for the manual CTOs it is the live handoff record (D4 manual state
+// up; for the manual CAOs it is the live handoff record (D4 manual state
 // machine). The run id is the brain-row id, which is also the fire id quoted
 // in the short reply (R6-NEW-4) — one value everywhere.
 
@@ -92,7 +92,7 @@ export function rowState(row: FireRow): RunState {
   return (known as string[]).includes(s) ? (s as RunState) : 'failed';
 }
 
-/** Muse CTO — automatic. The mailbox drain (every 30 minutes) picks up rows addressed to MUSE. */
+/** Muse CAO — automatic. The mailbox drain (every 30 minutes) picks up rows addressed to MUSE. */
 export class MuseAdapter extends BrainHandoffAdapter {
   protected readonly startStatus: FireStatus = 'started-automatically';
 
@@ -107,7 +107,7 @@ export class MuseAdapter extends BrainHandoffAdapter {
   }
 }
 
-/** Claude / Gemini / AXON-Hermes CTO — manual in v1. Muse CTO starts the run by hand. */
+/** Claude / Gemini / AXON-Hermes CAO — manual in v1. Muse CAO starts the run by hand. */
 export class ManualAdapter extends BrainHandoffAdapter {
   protected readonly startStatus: FireStatus = 'queued-for-person';
 

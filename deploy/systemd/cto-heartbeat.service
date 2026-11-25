@@ -1,9 +1,9 @@
 # /etc/systemd/system/cto-heartbeat.service
-# The cron `cto-heartbeat` (PLAN-v7 D4): writes Muse CTO's cto_heartbeat row
+# The cron `cto-heartbeat` (PLAN-v7 D4): writes Muse CAO's cto_heartbeat row
 # (agent MUSE) with the cto-relay-muse brain key. Fired every 15 minutes by
 # cto-heartbeat.timer.
 [Unit]
-Description=Slack CTO Loop — Muse CTO heartbeat (cto_heartbeat)
+Description=Slack CAO Loop — Muse CAO heartbeat (cto_heartbeat)
 After=network-online.target
 Wants=network-online.target
 

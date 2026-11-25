@@ -1,4 +1,4 @@
-// router (D6 layer 2): the start path for ONE CTO's program.
+// router (D6 layer 2): the start path for ONE CAO's program.
 //
 // Check order, fixed (D4): allowlist → pattern → event dedup → idempotency key
 // → task dedup → circuit breaker → queue. Each check is logged by id only.
@@ -34,10 +34,10 @@ import { POST_BACKOFF_MS } from './util/backoff.js';
 
 export const ADAPTER_ANSWER_TIMEOUT_MS = 5 * MIN; // D6 rule (1)
 export const MUSE_LINK_WINDOW_MS = 35 * MIN; // D6 rule (2), Muse
-export const MANUAL_CLAIM_LIMIT_MS = 30 * MIN; // D4: claimed within 30 minutes while Muse CTO is online
+export const MANUAL_CLAIM_LIMIT_MS = 30 * MIN; // D4: claimed within 30 minutes while Muse CAO is online
 export const START_EXPIRY_MS = 24 * HOUR; // D4: unclaimed / brain-down starts expire at 24 h
 export const BRAIN_RETRY_MS = HOUR; // D4: the brain write is retried hourly
-export const HEARTBEAT_OFFLINE_MS = 30 * MIN; // D4: Muse CTO offline when its heartbeat is older than 30 minutes
+export const HEARTBEAT_OFFLINE_MS = 30 * MIN; // D4: Muse CAO offline when its heartbeat is older than 30 minutes
 export const ORPHAN_GRACE_MS = 5 * MIN;
 export const CHECKIN_HOUR = 9;
 
@@ -243,7 +243,7 @@ export class RelayCore {
     return [...open].filter(([rid]) => !this.pendingRetries.has(rid)).map(([rid, channelId]) => ({ rid, channelId }));
   }
 
-  /** Allowlist (authors + the five CTO channels), then the pattern; anything else is ignored and logged. */
+  /** Allowlist (authors + the five CAO channels), then the pattern; anything else is ignored and logged. */
   async handleStartIngress(ev: SlackEvent, ctx: StartContext): Promise<StartOutcome> {
     if (!this.channels.has(ev.channelId)) {
       this.d.runlog.check(ctx.eventKey, 'allowlist', 'outside-cto-channels');
@@ -278,7 +278,7 @@ export class RelayCore {
     if (!quoted) return;
     if (!this.channels.has(ev.channelId) || !this.allowed.has(ev.authorId)) return;
     const e = this.d.book.resolveQuoted(quoted);
-    if (!e || e.terminal) return; // not ours (another CTO's program owns that fire id) or already over
+    if (!e || e.terminal) return; // not ours (another CAO's program owns that fire id) or already over
     await this.abort(e);
   }
 
@@ -368,7 +368,7 @@ export class RelayCore {
         this.d.adapter.fire({
           task,
           epoch: this.d.lease.currentEpoch(),
-          meta: { taskHash, normHash, idemKey, fromAgent: this.agentByBotId.get(ctx.authorId) ?? 'CTO-RELAY', channelId: ctx.channelId, messageTs: ctx.messageTs, permalink: null },
+          meta: { taskHash, normHash, idemKey, fromAgent: this.agentByBotId.get(ctx.authorId) ?? 'CAO-RELAY', channelId: ctx.channelId, messageTs: ctx.messageTs, permalink: null },
         }),
         Math.min(ADAPTER_ANSWER_TIMEOUT_MS, budgetMs),
       );
@@ -448,7 +448,7 @@ export class RelayCore {
     // when the brain write lands, retryHeld writes the brain-id `started` entry (reason names the provisional id).
     this.d.runlog.started(provisionalId, taskHash, this.d.cto.key);
     const safe = this.d.poster.safeTask(task);
-    // Manual CTOs: with the brain down the heartbeat cannot be read, so Muse CTO is treated as offline (fail-safe).
+    // Manual CAOs: with the brain down the heartbeat cannot be read, so Muse CAO is treated as offline (fail-safe).
     const reply = this.d.cto.adapter === 'automatic-muse' ? T.brainDown(safe, provisionalId) : T.waitingBothDown(safe, provisionalId);
     const posted = await this.replyTimed(ctx.channelId, reply, ctx.receivedAt, provisionalId);
     if (posted) this.stateRecord(provisionalId, 'reply-posted');
@@ -488,7 +488,7 @@ export class RelayCore {
           await this.d.adapter.fire({
             task,
             epoch: this.d.lease.currentEpoch(),
-            meta: { taskHash: e.taskHash, normHash: e.normHash, idemKey: e.idemKey, fromAgent: 'CTO-RELAY', channelId: e.channelId, messageTs: null, permalink: null },
+            meta: { taskHash: e.taskHash, normHash: e.normHash, idemKey: e.idemKey, fromAgent: 'CAO-RELAY', channelId: e.channelId, messageTs: null, permalink: null },
           })
         ).runId;
       const provisionalId = e.id;
@@ -549,7 +549,7 @@ export class RelayCore {
   }
 
   // -------------------------------------------------------------------------
-  // Manual state machine transitions (driven by Muse CTO through the control socket, or by the drain via the brain row)
+  // Manual state machine transitions (driven by Muse CAO through the control socket, or by the drain via the brain row)
   // -------------------------------------------------------------------------
 
   /** Read-modify-write of the relay's evidence block, guarded by its version. */
@@ -574,7 +574,7 @@ export class RelayCore {
     return null;
   }
 
-  /** Muse CTO's pre-start check + claim (D4): no duplicate run for the same task; claim recorded in the journal BEFORE work starts. */
+  /** Muse CAO's pre-start check + claim (D4): no duplicate run for the same task; claim recorded in the journal BEFORE work starts. */
   async claim(fireId: string, name: string): Promise<{ ok: boolean; reason: string }> {
     const e = this.d.book.resolveQuoted(fireId);
     if (!e || e.terminal) return { ok: false, reason: 'unknown-or-closed' };
@@ -628,7 +628,7 @@ export class RelayCore {
     return (await this.postLink(e, link)) ? { ok: true, reason: 'linked' } : { ok: false, reason: 'not-posted' };
   }
 
-  /** Muse CTO stopped a run after a stop request: the relay posts "stopped". */
+  /** Muse CAO stopped a run after a stop request: the relay posts "stopped". */
   async markStopped(fireId: string): Promise<{ ok: boolean; reason: string }> {
     const e = this.d.book.resolveQuoted(fireId);
     if (!e || e.terminal) return { ok: false, reason: 'unknown-or-closed' };
@@ -638,7 +638,7 @@ export class RelayCore {
     return { ok: true, reason: 'stopped' };
   }
 
-  /** Muse CTO's Monday review clears an overrun block. */
+  /** Muse CAO's Monday review clears an overrun block. */
   reviewClear(): void {
     this.record({ kind: 'fire-state', fireId: 'review', hash: '', state: 'review-cleared' });
   }
@@ -652,7 +652,7 @@ export class RelayCore {
     const ev = relayEvidence(row);
     const status = row.status ?? '';
     if ((status === 'claimed' || status === 'started' || status === 'linked') && e.claimAt === null) {
-      this.stateRecord(e.id, 'claimed', { claimName: (ev?.claim?.name ?? 'Muse CTO (drain)').slice(0, 80) });
+      this.stateRecord(e.id, 'claimed', { claimName: (ev?.claim?.name ?? 'Muse CAO (drain)').slice(0, 80) });
       this.d.runlog.progress(e.id, 'claimed', this.d.cto.key);
       if (e.claimAt !== null) this.d.metrics.manualQueue.add(e.claimAt - e.acceptedAt);
     }
@@ -667,7 +667,7 @@ export class RelayCore {
     if (t && !e.terminal) this.stateRecord(e.id, t, { reason: 'brain-row' });
   }
 
-  /** Is Muse CTO online? Heartbeat newer than 30 minutes. Brain down → offline (fail-safe). */
+  /** Is Muse CAO online? Heartbeat newer than 30 minutes. Brain down → offline (fail-safe). */
   async museOnline(): Promise<boolean> {
     try {
       const hb = await this.d.brain.getHeartbeat('MUSE');

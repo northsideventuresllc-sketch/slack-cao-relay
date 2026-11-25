@@ -76,7 +76,7 @@ export class Blocklist {
 /** `<@U123>` or `<@U123|name>` — a real Slack mention. */
 const MENTION = String.raw`<@[A-Z0-9]+(?:\|[^>]*)?>`;
 
-/** Plain-text CTO names, as a CTO might type them before the poster turns them into mentions. */
+/** Plain-text CAO names, as a CAO might type them before the poster turns them into mentions. */
 export function plainNamePattern(ctos: CtoEntry[]): string {
   const names = ctos.map((c) => c.displayName.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m));
   return `@(?:${names.join('|')})`;
@@ -97,7 +97,7 @@ export function containsStartPattern(text: string, ctos: CtoEntry[]): boolean {
   return re.test(text);
 }
 
-/** D3: turn plain "@Claude CTO" names into real mentions. Longest names first so "AXON-Hermes CTO" wins. */
+/** D3: turn plain "@Claude CAO" names into real mentions. Longest names first so "AXON-Hermes CAO" wins. */
 export function toRealMentions(text: string, ctos: CtoEntry[]): string {
   let out = text;
   const sorted = [...ctos].sort((a, b) => b.displayName.length - a.displayName.length);

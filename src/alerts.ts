@@ -1,4 +1,4 @@
-// Alerts to Muse CTO (main chat). Transport: an agent_comms row addressed to
+// Alerts to Muse CAO (main chat). Transport: an agent_comms row addressed to
 // MUSE with code `cto-relay-alert` (drained like other Muse mail), plus a local
 // alerts file that is always written — so an alert survives a brain outage.
 // Alerts carry machine codes and ids only.

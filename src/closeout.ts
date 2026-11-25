@@ -1,10 +1,10 @@
 // D5 — Close-out: the map to the log. The relay is the sole poster of maps.
-// 1. The CTO files a structured session log in the vault with a .sha256 sidecar.
+// 1. The CAO files a structured session log in the vault with a .sha256 sidecar.
 // 2. The relay reads the vault path back live, hashes the bytes, compares to the sidecar.
-// 3. Only on a match: the full map in the CTO's own channel, then a one-line
+// 3. Only on a match: the full map in the CAO's own channel, then a one-line
 //    pointer in #cto-bots tagging all four. The pointer is the sole link to the map.
 // 5. No read-back → nothing claiming completion is posted; the map waits in the
-//    durable outbox (5 min × 12, hourly × 24, TTL 7 days) and Muse CTO is alerted.
+//    durable outbox (5 min × 12, hourly × 24, TTL 7 days) and Muse CAO is alerted.
 
 import type { RelayCore } from './core.js';
 import type { CostEnvelope } from './caps.js';
@@ -19,7 +19,7 @@ import { iso } from './util/time.js';
 export interface CloseoutRequest {
   fireId: string;
   vaultLogPath: string;
-  sessionUrl: string | null; // run-chat link in the D4 per-CTO form; falls back to the posted run link
+  sessionUrl: string | null; // run-chat link in the D4 per-CAO form; falls back to the posted run link
   tokens: number | null; // null = unmetered (D4 cost envelope)
   minutes: number | null;
 }
@@ -41,7 +41,7 @@ export class Closeouts {
     return (await this.attempt(r.entry)) ? { ok: true, reason: 'posted' } : { ok: true, reason: 'queued-in-outbox' };
   }
 
-  /** Muse CTO hands in a close-out (control socket). Validates and queues it durably; call attempt() next, outside the lane. */
+  /** Muse CAO hands in a close-out (control socket). Validates and queues it durably; call attempt() next, outside the lane. */
   async request(req: CloseoutRequest): Promise<{ ok: boolean; reason: string; entry?: OutboxEntry }> {
     const d = this.core.d;
     const e = d.book.resolveQuoted(req.fireId);

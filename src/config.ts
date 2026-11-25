@@ -1,4 +1,4 @@
-// Configuration: the CTO registry (config/registry.json) and the process
+// Configuration: the CAO registry (config/registry.json) and the process
 // environment, both validated with Zod. No secret values live here — keys are
 // read from systemd credential files at start (see src/credentials.ts).
 
@@ -103,7 +103,7 @@ export function loadRegistry(path?: string): Registry {
   return RegistrySchema.parse(raw);
 }
 
-/** Every placeholder that would stop this CTO's program from starting. */
+/** Every placeholder that would stop this CAO's program from starting. */
 export function placeholdersBlocking(registry: Registry, cto: CtoKey): string[] {
   const found: string[] = [];
   for (const entry of registry.ctos) {
@@ -157,12 +157,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
   };
 }
 
-/** The five CTO channels: #cto-bots plus the four private CTO channels (D1). */
+/** The five CAO channels: #cto-bots plus the four private CAO channels (D1). */
 export function ctoChannelIds(registry: Registry): Set<string> {
   return new Set([registry.ctoBotsChannelId, ...registry.ctos.map((c) => c.channelId)]);
 }
 
-/** Authors allowed to start work: the four CTO bots plus any configured extras. */
+/** Authors allowed to start work: the four CAO bots plus any configured extras. */
 export function allowedAuthors(registry: Registry): Set<string> {
   return new Set([...registry.ctos.map((c) => c.botUserId), ...registry.allowlist.extraAuthorIds]);
 }

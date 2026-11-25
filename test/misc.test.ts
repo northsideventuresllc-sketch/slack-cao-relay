@@ -23,7 +23,7 @@ test('still-active test (KAR-6, R7-NEW-2): prong (a) only with a live probe; one
   // with a live probe, a live run is still active
   assert.equal(stillActive({ ...base, liveState: 'started' }), true);
   assert.equal(stillActive({ ...base, liveState: 'closed' }), false);
-  // (b) CTO channel message under 6 h
+  // (b) CAO channel message under 6 h
   assert.equal(stillActive({ ...base, channelMsgAt: now - STALL_MS + 1 }), true);
   // (c) under way + own-adapter entry under 6 h (claimed / started / linked)
   for (const rowStatus of ['claimed', 'started', 'linked']) assert.equal(stillActive({ ...base, rowStatus, lastAdapterEntryAt: now - HOUR }), true);
@@ -48,7 +48,7 @@ test('mini poller: 30-minute detection, 45-minute alert, failover after 3 failed
   r = decide(s, false, 10 * MIN, 0);
   r = decide(r.next, false, 10 * MIN, 0);
   r = decide(r.next, false, 10 * MIN, 0);
-  assert.equal(r.d.failover, false, 'health down but Muse CTO online: no failover');
+  assert.equal(r.d.failover, false, 'health down but Muse CAO online: no failover');
   r = decide(r.next, false, 31 * MIN, 0);
   assert.equal(r.d.failover, true);
   r = decide(r.next, false, null, 0);
@@ -112,9 +112,9 @@ test('post-queue: whole lines only, offset survives restart, rotation by rename 
 });
 
 test('templates: Appendix A word rule (a standalone em dash is not a word); relay templates are recognised', () => {
-  assert.equal(countWords('@Claude CTO — Need your call on the Match Fit email groups before we send. The list is ready.'), 18);
+  assert.equal(countWords('@Claude CAO — Need your call on the Match Fit email groups before we send. The list is ready.'), 18);
   assert.ok(isRelayTemplate(T.alreadyRunning()));
-  assert.ok(!isRelayTemplate('Done with the review, @Muse CTO please check'.replace('Done with', 'Finished')));
+  assert.ok(!isRelayTemplate('Done with the review, @Muse CAO please check'.replace('Done with', 'Finished')));
 });
 
 test('config: placeholders block start; effective daily cap is the lower of the daily cap and the manual-minutes ceiling', () => {
@@ -126,7 +126,7 @@ test('config: placeholders block start; effective daily cap is the lower of the 
   assert.equal(effectiveDailyCap(r.caps), 1);
 });
 
-test('caps: the daily total across all four CTOs is a hard stop on count', async () => {
+test('caps: the daily total across all four CAOs is a hard stop on count', async () => {
   const h = await makeHarness('claude');
   (h.core.d.caps as unknown as { caps: { dailyStartCapTotal: number } }).caps.dailyStartCapTotal = 1;
   await h.core.handleEvent(mention(h, 'claude', 'fire: one'));
@@ -148,12 +148,12 @@ test('broker: a manual program reaches only its own rows and its own lease name'
   const claude = new BrokeredBrain(brokerSocketPath(runDir, 'claude'));
   await claude.ping();
   const ev = { v: 0, cto: 'claude', task_hash: 'h', norm_hash: 'n', epoch: 1 };
-  const row = await claude.insertFireRow({ toAgent: 'Claude CTO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', evidence: ev, firedAt: new Date().toISOString() });
+  const row = await claude.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', evidence: ev, firedAt: new Date().toISOString() });
   assert.equal((await claude.getFireRow(row.id))?.id, row.id);
   await assert.rejects(claude.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'b', evidence: { ...ev, cto: 'muse' }, firedAt: '' }));
   await assert.rejects(claude.getLease('muse'));
   const gemini = new BrokeredBrain(brokerSocketPath(runDir, 'gemini'));
-  assert.equal(await gemini.getFireRow(row.id), null, 'another CTO cannot read the row');
+  assert.equal(await gemini.getFireRow(row.id), null, 'another CAO cannot read the row');
   await assert.rejects(claude.upsertHeartbeat());
   server.stop();
 });

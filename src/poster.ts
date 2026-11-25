@@ -1,6 +1,6 @@
-// The poster (D2/D6): the ONLY path to Slack for this CTO's bot.
+// The poster (D2/D6): the ONLY path to Slack for this CAO's bot.
 // - Fenced by the lease: a stale or lapsed epoch may not post.
-// - Post-queue text (CTO words): plain names → real mentions, start pattern
+// - Post-queue text (CAO words): plain names → real mentions, start pattern
 //   stripped, then the blocklist — a hit BLOCKS the post (logged, never posted).
 // - Relay templates: never carry the start pattern (asserted); any task text
 //   embedded in a template is made safe first (redacted, mentions and `fire:`
@@ -124,8 +124,8 @@ export class Poster {
   }
 
   /**
-   * The start-queue post (JB's start relayed by Muse CTO, D4): the explicit
-   * `<@CTO> fire: <task>` pattern, posted unstripped — the one post that may carry
+   * The start-queue post (JB's start relayed by Muse CAO, D4): the explicit
+   * `<@CAO> fire: <task>` pattern, posted unstripped — the one post that may carry
    * it. Same live fence and backoff as every post; a refusal or failure is
    * alerted, never silent (C1-FU-7).
    */

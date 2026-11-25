@@ -1,6 +1,6 @@
 // D5 §6 — the close-out sweep, the daily 9am open, the 9am lock clear, and the
 // sibling watch. Owner: the Muse relay program (it holds the brain key and is
-// a member of all five CTO channels).
+// a member of all five CAO channels).
 
 import { relayEvidence, type BrainApi, type FireRow, type RelayEvidence } from './brain.js';
 import { isPlaceholder, type CtoEntry, type Registry } from './config.js';
@@ -26,10 +26,10 @@ export const POLLER_STALE_MS = 5 * 60_000;
  *     the adapter has a real live probe (`liveStatus`). No v1 adapter has one:
  *     Muse and the three manual adapters all read the stored brain row, so
  *     prong (a) does NOT apply in v1, and still-active rests on (b) + (c);
- * (b) the CTO's channel has a message from that CTO in the last 6 hours
+ * (b) the CAO's channel has a message from that CAO in the last 6 hours
  *     (relay templates excluded);
  * (c) the run is under way (brain row `claimed`, `started` or `linked`) AND the
- *     last state-changing run-log entry by the CTO's own adapter is under 6 hours old.
+ *     last state-changing run-log entry by the CAO's own adapter is under 6 hours old.
  *
  * Stalled ⟺ NOT still active ⟺ (with no live probe) no activity — no (b)
  * message and no (c) entry — for 6 hours. D5 "fails all three for 6 hours" and
@@ -118,7 +118,7 @@ export class MuseDuties {
    * Every 6 hours. Flags (1) stalled and (2) unclosed, separately, matching on
    * fire id. Detection timing (R7-NEW-1): a run is flagged by the FIRST sweep
    * after 6 hours of silence — so between 6 and 12 hours after its last
-   * activity, not "within 6 hours". The warning is posted to the CTO's channel
+   * activity, not "within 6 hours". The warning is posted to the CAO's channel
    * at once when flagged (once per silence), and listed again in the next 9am message.
    */
   async sweep(opts: { post?: boolean } = {}): Promise<SweepFinding[]> {
@@ -177,7 +177,7 @@ export class MuseDuties {
     }
   }
 
-  /** 9am: the daily open in #cto-bots — what is open, what each CTO owes, pending starts, and sweep warnings. */
+  /** 9am: the daily open in #cto-bots — what is open, what each CAO owes, pending starts, and sweep warnings. */
   async dailyOpen(): Promise<void> {
     const now = this.clock();
     const open: string[] = [];
@@ -240,7 +240,7 @@ export class MuseDuties {
    * R7-NEW-5 — breaks the dead-alerter circle. The mini poller writes its own
    * cto_heartbeat row (agent MINI-POLLER) every minute; this program checks it
    * every minute. Stale over 5 minutes → alert + visible post in #cto-bots, once
-   * per incident. If BOTH this program and the poller are down, Claude CTO's
+   * per incident. If BOTH this program and the poller are down, Claude CAO's
    * own 9am check-in (`cto-relay checkin-report`) shows both stale heartbeats.
    */
   async watchPoller(): Promise<void> {
@@ -285,14 +285,14 @@ export class MuseDuties {
 
   /**
    * ECO-FU-3 — the Monday review, measured. Every Monday at the 9am check-in
-   * the Muse program counts last week's starts (total and per CTO, from the
+   * the Muse program counts last week's starts (total and per CAO, from the
    * brain rows) and the fired-run tokens reported at close-out, compares them
    * with the floor (5 starts a week) and the weekly share of the token ceiling,
-   * appends the line to <stateDir>/weekly-review.jsonl, and alerts Muse CTO with
+   * appends the line to <stateDir>/weekly-review.jsonl, and alerts Muse CAO with
    * the numbers. If the total is below the floor for two reviews in a row AND
    * did not rise (flat trend), it raises `kill-switch-condition-met`. Pausing
-   * stays Muse CTO's decision (runbook §12). Review tokens (≤50,000 a week) are
-   * Muse CTO's own harness spend: recorded as null here, filled in at the review.
+   * stays Muse CAO's decision (runbook §12). Review tokens (≤50,000 a week) are
+   * Muse CAO's own harness spend: recorded as null here, filled in at the review.
    */
   async weeklyReview(stateDir: string, caps: { monthlyTokenCeiling: number; weeklyFloor: number }): Promise<WeeklyReview> {
     const now = this.clock();

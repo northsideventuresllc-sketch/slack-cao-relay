@@ -1,5 +1,5 @@
 -- 0001_cto_relay_tables.sql
--- Slack CTO Loop relay — the two brain tables missing from NI Brain
+-- Slack CAO Loop relay — the two brain tables missing from NI Brain
 -- (Supabase project uaztknnipdxxptrmlxlb, public schema).
 --
 -- Source of truth:
@@ -17,9 +17,9 @@
 begin;
 
 -- ---------------------------------------------------------------------------
--- cto_heartbeat — Muse CTO's liveness row.
+-- cto_heartbeat — Muse CAO's liveness row.
 -- Written every 15 minutes by the VM cron `cto-heartbeat` (agent = 'MUSE').
--- Muse CTO is offline when its row is older than 30 minutes (detection);
+-- Muse CAO is offline when its row is older than 30 minutes (detection);
 -- the mini poller alerts at 45 minutes.
 -- Columns exactly as PLAN-v7.md D4 / Appendix D: (agent, heartbeat_at).
 -- ---------------------------------------------------------------------------
@@ -31,14 +31,14 @@ create table if not exists public.cto_heartbeat (
 );
 
 comment on table  public.cto_heartbeat is
-  'Slack CTO Loop: one liveness row per agent. Written by the cto-heartbeat cron every 15 min. Offline = older than 30 min.';
+  'Slack CAO Loop: one liveness row per agent. Written by the cto-heartbeat cron every 15 min. Offline = older than 30 min.';
 comment on column public.cto_heartbeat.agent is
   'Agent name, same casing as agent_comms.to_agent (e.g. MUSE).';
 comment on column public.cto_heartbeat.heartbeat_at is
   'Time of the last heartbeat write.';
 
 -- ---------------------------------------------------------------------------
--- cto_relay_lease — one lease row per relay program (per CTO).
+-- cto_relay_lease — one lease row per relay program (per CAO).
 -- A program acquires the lease with epoch+1 before starting; every fire and
 -- every post first checks its epoch against this row (a stale epoch is
 -- refused). Lease lasts 90 s; the holder heartbeats every 30 s by pushing
@@ -65,9 +65,9 @@ create table if not exists public.cto_relay_lease (
 );
 
 comment on table  public.cto_relay_lease is
-  'Slack CTO Loop: one lease per relay program. 90 s lease, 30 s heartbeat. epoch is the fencing token, +1 on every acquisition.';
+  'Slack CAO Loop: one lease per relay program. 90 s lease, 30 s heartbeat. epoch is the fencing token, +1 on every acquisition.';
 comment on column public.cto_relay_lease.name is
-  'The held name: the CTO this relay program serves (muse, claude, gemini, axon-hermes).';
+  'The held name: the CAO this relay program serves (muse, claude, gemini, axon-hermes).';
 comment on column public.cto_relay_lease.epoch is
   'Fencing token. Goes up by one on every acquisition/failover. A fire or post carrying an older epoch is refused.';
 comment on column public.cto_relay_lease.holder is

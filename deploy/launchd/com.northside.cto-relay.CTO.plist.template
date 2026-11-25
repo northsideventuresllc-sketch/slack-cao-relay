@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Mini (failover host) relay for one CTO. Copy to
+<!-- Mini (failover host) relay for one CAO. Copy to
      /Library/LaunchDaemons/com.northside.cto-relay.<cto>.plist, replacing CTO_KEY.
-     Runs as the per-CTO macOS user cto-relay-<cto> (D6 isolation); keys come from
+     Runs as the per-CAO macOS user cto-relay-<cto> (D6 isolation); keys come from
      that user's login keychain via the wrapper, never from this file.
      Not loaded at boot (RunAtLoad false): started only by cto-relay-mini-sync.sh --start. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

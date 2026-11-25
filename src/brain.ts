@@ -58,7 +58,7 @@ export const RelayEvidenceSchema = z.object({
   reply_ts: z.string().nullable().optional(),
   run_chat_url: z.string().nullable().optional(),
   link_posted_at: z.string().nullable().optional(),
-  last_progress_at: z.string().optional(), // last state-changing entry by the CTO's own adapter
+  last_progress_at: z.string().optional(), // last state-changing entry by the CAO's own adapter
   claim: z.object({ name: z.string(), at: z.string() }).optional(),
   lock_cleared: z.object({ by: z.string(), at: z.string() }).optional(),
   closeout: z
@@ -139,7 +139,7 @@ export interface FirePatchGuard {
 
 /**
  * Every brain operation the relay uses. DirectBrain talks PostgREST; the
- * manual CTOs' programs use BrokeredBrain (src/broker.ts), which forwards the
+ * manual CAOs' programs use BrokeredBrain (src/broker.ts), which forwards the
  * same calls to the Muse program — they never hold the brain key (D7).
  */
 export interface BrainApi {

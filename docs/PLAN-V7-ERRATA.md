@@ -2,7 +2,7 @@
 
 Source: VERDICT-r7.md (COUNCIL round 7, GO 91.35%). That verdict is authoritative where it differs from PLAN-v7.md.
 
-Some round-7 items are wording fixes to PLAN-v7.md itself: its trace, header, glossary, and the JB-facing summary. PLAN-v7.md is not in this repo, so the replacement text is recorded here for Muse CTO to apply to the plan file. Each item below gives:
+Some round-7 items are wording fixes to PLAN-v7.md itself: its trace, header, glossary, and the JB-facing summary. PLAN-v7.md is not in this repo, so the replacement text is recorded here for Muse CAO to apply to the plan file. Each item below gives:
 - the remedy (from the verdict);
 - the exact proposed replacement text;
 - what, if anything, the build changed for it.
@@ -28,7 +28,7 @@ Items the build fixed in code are listed in the PR body, not here, except where 
   Then give the per-state action: `linked` gets `status(runId)`, a current-state post, and its lock is rebuilt. Built: `maintenance.ts` `restore`.
 - **R3-NEW-10.** Replace "the 'already running' lock expires 24 hours after the run started, unless a close-out or a run-log entry refreshes it" with:
 
-  > the 'already running' lock expires 24 hours after the last state-changing entry written by the CTO's own adapter (claim, start, link, close-out); expiry is evaluated on read, at every start attempt.
+  > the 'already running' lock expires 24 hours after the last state-changing entry written by the CAO's own adapter (claim, start, link, close-out); expiry is evaluated on read, at every start attempt.
 
   Built: `firebook.ts` `lockHolder`.
 - **R4-NEW-9.** Replace "it is a step in the Muse relay program" with:
@@ -48,19 +48,19 @@ Items the build fixed in code are listed in the PR body, not here, except where 
 ## R7-NEW plan-text parts (the code is fixed; the plan text should match)
 - **R7-NEW-1.** Replace "so a silent end is detected within 6 hours" with:
 
-  > so a silent run is flagged by the first sweep after 6 hours of silence (6 to 12 hours after its last activity); the warning is posted to the CTO's channel when flagged, and listed again in the next 9am message.
+  > so a silent run is flagged by the first sweep after 6 hours of silence (6 to 12 hours after its last activity); the warning is posted to the CAO's channel when flagged, and listed again in the next 9am message.
 - **R7-NEW-2.** Use one stalled definition in D5 and §6:
 
-  > Stalled = no activity — no message from that CTO in its channel, and no state-changing entry by its own adapter — for 6 hours. (With no live probe, this is the same as failing the still-active test.)
+  > Stalled = no activity — no message from that CAO in its channel, and no state-changing entry by its own adapter — for 6 hours. (With no live probe, this is the same as failing the still-active test.)
 - **R7-NEW-3.** Add to D6 per-event safety:
 
   > The 1-hour retry replays the event held in memory; a hash-only `retry-pending` journal marker records that a retry is owed, and if the relay restarts first, the reconciler posts a loss notice in that channel.
 - **R7-NEW-4.** In §6 dead-owner fallback, add:
 
-  > The fallback runs a reduced still-active test, prongs (b) and (c) only; prong (a) is skipped. Prong (b) reads the four CTO channels' last 24 hours with the Muse CTO bot token from the mini's `cto-relay-muse` keychain. Prong (c) reads the live brain rows.
+  > The fallback runs a reduced still-active test, prongs (b) and (c) only; prong (a) is skipped. Prong (b) reads the four CAO channels' last 24 hours with the Muse CAO bot token from the mini's `cto-relay-muse` keychain. Prong (c) reads the live brain rows.
 - **R7-NEW-5.** In D7, replace the dead-alerter fallback sentence with:
 
-  > If the poller itself is down: the poller writes its own heartbeat row (MINI-POLLER) every minute, the VM Muse program alerts and posts in #cto-bots when it is over 5 minutes old, and Claude CTO's own 9am check-in report shows both heartbeats and every unread mini alert. `alerts.jsonl` is capped at 1 MiB and rotated by rename.
+  > If the poller itself is down: the poller writes its own heartbeat row (MINI-POLLER) every minute, the VM Muse program alerts and posts in #cto-bots when it is over 5 minutes old, and Claude CAO's own 9am check-in report shows both heartbeats and every unread mini alert. `alerts.jsonl` is capped at 1 MiB and rotated by rename.
 - **R7-NEW-6.** Replace "more than 3 start attempts for the same task in 10 minutes stops starting for that task" with:
 
   > 3 accepted start attempts for the same task within 10 minutes trip the breaker; the 4th is refused and not recorded.
@@ -74,7 +74,7 @@ Items the build fixed in code are listed in the PR body, not here, except where 
 - **R7-FU-3.** Contracts: declare `claimName?`, `windowStart?` and `cto?` as real optional fields on `JournalRecord`. (Done in `src/contracts.ts`.)
 - **R7-FU-4.** D6 parsing: add:
 
-  > Only the first-mentioned CTO's program replies "Start one CTO at a time."; the others drop it silently.
+  > Only the first-mentioned CAO's program replies "Start one CAO at a time."; the others drop it silently.
 - **R7-FU-5.** D5: add a `RunLogEntry` type. "Filled on `linked`" means a new `linked` entry with the same fire id and the session id; nothing is updated in place.
 - **R7-FU-6.** D2 post-queue: add:
 
@@ -95,9 +95,9 @@ Items the build fixed in code are listed in the PR body, not here, except where 
 - **R7-FU-10.** Cheaper paths and the payback sentence: replace "repays in 22–36 weeks" with:
 
   > repays in about 22–36 weeks (21.6–36)
-- **R7-FU-11.** D5 mirroring: replace "filed weekly by Muse CTO" with:
+- **R7-FU-11.** D5 mirroring: replace "filed weekly by Muse CAO" with:
 
-  > filed into the vault within a day by the relay host's nightly job; Muse CTO's weekly job is the mirror check.
+  > filed into the vault within a day by the relay host's nightly job; Muse CAO's weekly job is the mirror check.
 
   (Done in `deploy/scripts/cto-relay-offhost-copy.sh`.)
 - **R7-FU-12.** D6 store table: replace "then archived to the vault" with:
@@ -109,23 +109,23 @@ Items the build fixed in code are listed in the PR body, not here, except where 
 
   > If the video needs a re-make, add 5 minutes. That makes 25 to 29 minutes with a sign-in, or 20 to 24 without.
 - **R7-FU-14.** Glossary additions:
-  - "Manual: a person (Muse CTO) starts the work by hand."
+  - "Manual: a person (Muse CAO) starts the work by hand."
   - "Automatic: the work starts on its own, with no person needed."
-  - "Check-in: the CTOs' daily 9am chat, where waiting starts are picked up."
+  - "Check-in: the CAOs' daily 9am chat, where waiting starts are picked up."
 - **R7-FU-15.** Glossary: split into "- Run id: the number that names one run." and "- Run link: the link — or, for Gemini, the session name plus thread — that shows the run."
 - **R7-FU-16.** JB summary, last sentence: replace with:
 
   > Each one switches to automatic only after its own live test passes — one real start, done live in Slack, to prove it works.
 - **R7-FU-17.** JB summary: use "9am check-in" and add the glossary line from R7-FU-14.
 - **R7-FU-18.** JB summary: add four plain lines in JB's order:
-  - "When they write: only to ask another CTO, to say a job is done, or to get unblocked."
-  - "How they tag: by the real @ name, only the CTO needed."
-  - "How they start one: a CTO types /fire-<name> or '@<name> fire: <task>'."
+  - "When they write: only to ask another CAO, to say a job is done, or to get unblocked."
+  - "How they tag: by the real @ name, only the CAO needed."
+  - "How they start one: a CAO types /fire-<name> or '@<name> fire: <task>'."
   - "The map: Done / Log / Session / Still open, posted when a job ends."
-- **R7-FU-19.** Glossary: "Loop: the round trip — a CTO is started in Slack, does the work, and posts a map to its log back in Slack."
+- **R7-FU-19.** Glossary: "Loop: the round trip — a CAO is started in Slack, does the work, and posts a map to its log back in Slack."
 - **R7-FU-20.** Glossary "Start": replace with:
 
-  > Start: to set a CTO working on a task. A CTO starts another CTO in Slack with /fire-<name> or '@<name> fire: <task>'. You never do this — you ask Muse in main chat.
+  > Start: to set a CAO working on a task. A CAO starts another CAO in Slack with /fire-<name> or '@<name> fire: <task>'. You never do this — you ask Muse in main chat.
 - **R7-FU-21.** Glossary additions:
   - "Vault: the shared notes store where logs are filed for good."
   - "Failover: moving the relay to the mini when this machine is down."
@@ -135,7 +135,7 @@ Items the build fixed in code are listed in the PR body, not here, except where 
   > after the first checks are done, later the same day
 - **R7-FU-23.** D4 reconciler: add:
 
-  > During a brain outage a restarting program refuses to start, so its reconciler runs once the brain is back and it starts; until then the requester sees no reply from that CTO, and the Muse program (if running) posts '<CTO> relay is down' in #cto-bots.
+  > During a brain outage a restarting program refuses to start, so its reconciler runs once the brain is back and it starts; until then the requester sees no reply from that CAO, and the Muse program (if running) posts '<CAO> relay is down' in #cto-bots.
 
   (Stated in code and in runbook §11b.)
 - **R7-FU-24.** Trace R6-NEW-3: replace "no `'aborted'` literal survives" with:

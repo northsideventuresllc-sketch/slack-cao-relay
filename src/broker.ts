@@ -1,13 +1,13 @@
 // Brain broker. D7: "The other three programs fetch only their two Slack keys"
 // — only the Muse program holds the `cto-relay-muse` brain key. Yet every
 // program writes brain rows and holds a lease (D4/D6). The broker squares the
-// two: the Muse program serves one Unix socket per manual CTO, and the manual
+// two: the Muse program serves one Unix socket per manual CAO, and the manual
 // programs make their brain calls through it. D4's manual health() rule
 // ("reachable means the Muse program is up") follows directly.
 //
 // Isolation: socket `<runDir>/broker/<cto>.sock`, mode 0660, group
-// `cto-relay-<cto>` — only that CTO's service user (and Muse) can connect. The
-// broker scopes every call to the socket's CTO: its own agent_comms rows, its
+// `cto-relay-<cto>` — only that CAO's service user (and Muse) can connect. The
+// broker scopes every call to the socket's CAO: its own agent_comms rows, its
 // own lease name, alerts to MUSE only, heartbeat read-only.
 
 import { createServer, createConnection, type Server, type Socket } from 'node:net';
@@ -94,7 +94,7 @@ export class BrokerServer {
           chownSync(path, process.getuid?.() ?? 0, gid);
           chmodSync(path, 0o660);
         } catch {
-          chmodSync(path, 0o600); // fail closed: only Muse can connect; that CTO's program refuses to start
+          chmodSync(path, 0o600); // fail closed: only Muse can connect; that CAO's program refuses to start
           this.log.error('broker socket group not set; manual program will fail closed', { cto: cto.key });
         }
       });
@@ -214,7 +214,7 @@ function groupId(name: string): number {
   return gid;
 }
 
-/** Runs in the manual CTOs' programs: the same BrainApi, over the broker socket. */
+/** Runs in the manual CAOs' programs: the same BrainApi, over the broker socket. */
 export class BrokeredBrain implements BrainApi {
   private nextId = 1;
 

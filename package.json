@@ -1,8 +1,8 @@
 {
-  "name": "slack-cto-relay",
+  "name": "slack-cao-relay",
   "version": "0.1.0",
   "private": true,
-  "description": "Slack CTO Loop relay: one program per CTO (Muse, Claude, Gemini, AXON-Hermes).",
+  "description": "Slack CAO Loop relay: one program per CAO (Muse, Claude, Gemini, AXON-Hermes).",
   "type": "module",
   "engines": {
     "node": ">=22"

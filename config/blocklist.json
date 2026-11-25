@@ -1,5 +1,5 @@
 {
-  "$comment": "Post blocklist (PLAN-v7 D2). Owner: Muse CTO, reviewed monthly; the canonical list is in docs/RELAY-RUNBOOK.md and must match this file. Each entry is a JavaScript regular expression source, matched case-insensitively. A hit BLOCKS free-form post-queue text and REDACTS relay-templated text, audit snippets and mirror entries.",
+  "$comment": "Post blocklist (PLAN-v7 D2). Owner: Muse CAO, reviewed monthly; the canonical list is in docs/RELAY-RUNBOOK.md and must match this file. Each entry is a JavaScript regular expression source, matched case-insensitively. A hit BLOCKS free-form post-queue text and REDACTS relay-templated text, audit snippets and mirror entries.",
   "keyPatterns": [
     "xox[baprs]-[A-Za-z0-9-]{6,}",
     "xapp-[A-Za-z0-9-]{6,}",

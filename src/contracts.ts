@@ -60,11 +60,11 @@ export interface JournalRecord {
   claimName?: string;
   windowStart?: string;
   // EXTENSION fields — ids and hashes only, never task text (D6 redaction):
-  cto?: string; // CTO key (muse | claude | gemini | axon-hermes)
+  cto?: string; // CAO key (muse | claude | gemini | axon-hermes)
   state?: FireJournalState; // fire-state: the state this record moves the fire to
   channelId?: string; // fire-request: where the requester is watching
   normHash?: string; // fire-request: SHA-256 of the normalized task (task dedup)
-  idemKey?: string; // fire-request: SHA-256 idempotency key (CTO + normalized task + minute bucket)
+  idemKey?: string; // fire-request: SHA-256 idempotency key (CAO + normalized task + minute bucket)
   eventKey?: string; // fire-request: SHA-256 event dedup key
   provisional?: boolean; // fire-request: brain was down; fireId is a local id until the brain write lands
   brainId?: string; // fire-state 'brain-written': the brain-row id a provisional fire id maps to
@@ -134,7 +134,7 @@ export interface HealthResponse {
   ackBreachCount: number;
   adapter: AdapterHealth;
   // R7-FU-2: the two fields D6 says the health endpoint returns.
-  queueDepth: number; // non-terminal entries in this CTO's queue (max 10)
+  queueDepth: number; // non-terminal entries in this CAO's queue (max 10)
   leaseState: 'none' | 'held' | 'lapsed' | 'lost'; // this program's brain lease state
 }
 
@@ -149,7 +149,7 @@ export interface FireMeta {
   taskHash: string;
   normHash: string;
   idemKey: string;
-  fromAgent: string; // agent name of the requesting CTO bot
+  fromAgent: string; // agent name of the requesting CAO bot
   channelId: string;
   messageTs: string | null;
   permalink: string | null;

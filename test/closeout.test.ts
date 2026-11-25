@@ -8,7 +8,7 @@ import { sha256 } from '../src/util/hash.js';
 import { MIN, HOUR } from '../src/util/time.js';
 import { makeHarness, mention } from './helpers.js';
 
-const LOG = '# Session\n\n## Decided\n- Match Fit email groups built and merged.\n\n## Why\n- asked\n\n## What failed\n- none\n\n## Reusable\n- template\n\n## Open items\n- Deploy check. Owner: Muse CTO.\n';
+const LOG = '# Session\n\n## Decided\n- Match Fit email groups built and merged.\n\n## Why\n- asked\n\n## What failed\n- none\n\n## Reusable\n- template\n\n## Open items\n- Deploy check. Owner: Muse CAO.\n';
 
 class FakeVault implements VaultReader {
   ok = true;
@@ -26,7 +26,7 @@ async function linkedRun(cto: 'muse' | 'claude' = 'claude') {
   const h = await makeHarness(cto);
   await h.core.handleEvent(mention(h, cto, 'fire: build groups'));
   const id = h.brain.insertOrder[0]!;
-  await h.core.claim(id, 'Muse CTO');
+  await h.core.claim(id, 'Muse CAO');
   await h.core.markStarted(id);
   await h.core.setLink(id, 'https://claude.ai/code/session-example');
   const vault = new FakeVault();
@@ -35,7 +35,7 @@ async function linkedRun(cto: 'muse' | 'claude' = 'claude') {
   return { h, id, vault, outbox, co };
 }
 
-test('close-out: read-back matches → full map in the CTO channel, then the pointer in #cto-bots; row closed; lock released', async () => {
+test('close-out: read-back matches → full map in the CAO channel, then the pointer in #cto-bots; row closed; lock released', async () => {
   const { h, id, co } = await linkedRun('claude');
   const res = await co.submit({ fireId: id, vaultLogPath: 'Sector/Session Logs/2026-11-05-x.md', sessionUrl: null, tokens: 1200, minutes: 30 });
   assert.deepEqual(res, { ok: true, reason: 'posted' });
@@ -47,7 +47,7 @@ test('close-out: read-back matches → full map in the CTO channel, then the poi
   assert.equal(lines[0], 'Done: Match Fit email groups built and merged.');
   assert.match(lines[1]!, /^Log: <https:\/\/vault\.invalid\/.+\|2026-11-05-x>$/);
   assert.equal(lines[2], 'Session: https://claude.ai/code/session-example');
-  assert.equal(lines[3], 'Still open: Deploy check. Owner: Muse CTO.');
+  assert.equal(lines[3], 'Still open: Deploy check. Owner: Muse CAO.');
   for (const c of h.registry.ctos) assert.ok(map.text.includes(`<@${c.botUserId}>`), 'map tags all four');
   assert.equal(ptr.channel, h.registry.ctoBotsChannelId);
   assert.match(ptr.text, /^Close-out: Match Fit email groups built and merged\.\. Map is here: https:\/\/example\.invalid\/archives\//);
@@ -56,7 +56,7 @@ test('close-out: read-back matches → full map in the CTO channel, then the poi
   assert.ok(h.journal.all().some((r) => r.state === 'closed' && r.closeoutKey));
 });
 
-test('close-out: no read-back → nothing claiming completion is posted; the map waits in the outbox and Muse CTO is alerted', async () => {
+test('close-out: no read-back → nothing claiming completion is posted; the map waits in the outbox and Muse CAO is alerted', async () => {
   const { h, id, vault, outbox, co } = await linkedRun('claude');
   vault.ok = false;
   const before = h.sender.posts.length;
@@ -73,7 +73,7 @@ test('close-out: no read-back → nothing claiming completion is posted; the map
   assert.equal(h.brain.rows.get(id)?.status, 'closed');
 });
 
-test('close-out over the token budget: flagged, and the next start for that CTO is refused until the Monday review', async () => {
+test('close-out over the token budget: flagged, and the next start for that CAO is refused until the Monday review', async () => {
   const { h, id, co } = await linkedRun('claude');
   await co.submit({ fireId: id, vaultLogPath: 'x/log.md', sessionUrl: null, tokens: 30_000, minutes: 10 });
   await h.advance(31 * MIN);
@@ -107,5 +107,5 @@ test('vault helpers: sidecar parsing, safe paths, structured log sections', () =
   assert.equal(safeVaultPath('Sector 5 — AXON/Research/Session Logs/x.md'), true);
   const p = parseSessionLog(LOG);
   assert.deepEqual(p.decided, ['Match Fit email groups built and merged.']);
-  assert.deepEqual(p.openItems, ['Deploy check. Owner: Muse CTO.']);
+  assert.deepEqual(p.openItems, ['Deploy check. Owner: Muse CAO.']);
 });

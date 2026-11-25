@@ -57,8 +57,8 @@ test('KAR-FU-2: broker countStarts — global totals or the socket\'s own agent 
   await new Promise((r) => setTimeout(r, 50));
   const claude = new BrokeredBrain(brokerSocketPath(runDir, 'claude'));
   assert.equal(await claude.countStarts(new Date(0).toISOString()), 0);
-  assert.equal(await claude.countStarts(new Date(0).toISOString(), 'Claude CTO'), 0);
-  await assert.rejects(claude.countStarts(new Date(0).toISOString(), 'Gemini CTO'));
+  assert.equal(await claude.countStarts(new Date(0).toISOString(), 'Claude CAO'), 0);
+  await assert.rejects(claude.countStarts(new Date(0).toISOString(), 'Gemini CAO'));
   server.stop();
 });
 
@@ -80,7 +80,7 @@ test('KAR-FU-4: a person\'s /fire command gets a plain refusal, not silence', as
   const h = await makeHarness('claude');
   const claude = ctoEntry(h.registry, 'claude');
   await h.core.handleEvent({ eventId: '', channelId: claude.channelId, authorId: h.registry.jbUserId, text: 'do a thing', timestamp: '1.1', ingress: 'slash_command', command: '/fire-claude', triggerId: 'T1' });
-  assert.equal(h.sender.texts().at(-1), 'Starts come from the CTO bots only. Ask Muse CTO in main chat.');
+  assert.equal(h.sender.texts().at(-1), 'Starts come from the CAO bots only. Ask Muse CAO in main chat.');
   assert.equal(h.brain.rows.size, 0);
 });
 
@@ -113,7 +113,7 @@ test('C1-FU-4: a long task is clamped to 10 words in the short reply', async () 
 test('OPT-FU-2: a `linked` brain row with no journal entry is marked failed by the reconciler', async () => {
   const h = await makeHarness('claude');
   const claude = ctoEntry(h.registry, 'claude');
-  const row = await h.brain.insertFireRow({ toAgent: 'Claude CTO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', firedAt: new Date(h.clock.now()).toISOString(), evidence: { v: 0, cto: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } } });
+  const row = await h.brain.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', firedAt: new Date(h.clock.now()).toISOString(), evidence: { v: 0, cto: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } } });
   h.brain.rows.get(row.id)!.status = 'linked';
   await h.advance(10 * MIN);
   await new Maintenance(h.core).reconcile();

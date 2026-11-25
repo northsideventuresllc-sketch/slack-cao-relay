@@ -1,4 +1,4 @@
-// Local control socket: how Muse CTO (main chat, on this VM) drives the manual
+// Local control socket: how Muse CAO (main chat, on this VM) drives the manual
 // state machine and close-outs without ever being a second journal writer. The
 // program stays the single writer of its journal, and every command runs in the
 // same serial lane as Slack events — so abort-vs-claim is decided by journal

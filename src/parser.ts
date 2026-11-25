@@ -10,7 +10,7 @@ export const MAX_EVENT_BYTES = 10 * 1024;
 
 export const REPLY_EMPTY = 'Say what the task is.';
 export const REPLY_TOO_LONG = 'Too long. Keep it under 280 characters.';
-export const REPLY_MULTI = 'Start one CTO at a time.';
+export const REPLY_MULTI = 'Start one CAO at a time.';
 export const REPLY_NOT_FIRE_COMMAND = 'I only take /fire commands here.';
 
 export type ParseResult =
@@ -56,12 +56,12 @@ function validateTask(raw: string): ParseResult {
 }
 
 /**
- * Parse a start request for THIS CTO's program.
- * - slash_command: must be this CTO's /fire command; any other command gets the fixed reply.
+ * Parse a start request for THIS CAO's program.
+ * - slash_command: must be this CAO's /fire command; any other command gets the fixed reply.
  * - app_mention: must carry `<@this bot> fire: <task>` after stripping code and quotes.
- *   A bare mention never starts work. Multiple CTO mentions with the start
- *   pattern get "Start one CTO at a time." — only from the first-mentioned
- *   CTO's program, so exactly one reply goes out.
+ *   A bare mention never starts work. Multiple CAO mentions with the start
+ *   pattern get "Start one CAO at a time." — only from the first-mentioned
+ *   CAO's program, so exactly one reply goes out.
  */
 export function parseStart(ev: SlackEvent, me: CtoEntry, registry: Registry): ParseResult {
   if (ev.ingress === 'message' || ev.ingress === undefined) {
