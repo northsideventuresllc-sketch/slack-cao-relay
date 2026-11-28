@@ -12,6 +12,7 @@ import { ProxyAgent } from 'undici';
 import { z } from 'zod';
 import type { ChannelAdapter, ChannelEvent, SlackEvent } from '../contracts.js';
 import { SOCKET_RECONNECT_BACKOFF_MS, realSleep, type Sleep } from '../util/backoff.js';
+import { assertBotPostArgs, assertSlackTokenShapes, requireBotId } from '../slackguard.js';
 import type { Logger } from '../util/log.js';
 
 const InnerEventSchema = z.object({
@@ -92,6 +93,7 @@ export class SlackChannel implements ChannelAdapter {
   private readonly sleep: Sleep;
 
   constructor(private readonly opts: SlackChannelOptions) {
+    assertSlackTokenShapes(opts.botToken, opts.appToken); // bot-token-only: a user token never gets a client
     this.sleep = opts.sleep ?? realSleep;
     const dispatcher = opts.httpsProxy ? new ProxyAgent(opts.httpsProxy) : undefined;
     // Our own backoff owns retries (D6): the client's built-in retries are off and 429s are surfaced.
@@ -163,7 +165,9 @@ export class SlackChannel implements ChannelAdapter {
 
   /** EXTENSION: post and return the message ts (needed for the map permalink). */
   async postWithTs(channel: string, text: string): Promise<string> {
-    const res = await this.web.chat.postMessage({ channel, text, unfurl_links: false, unfurl_media: false });
+    const args = { channel, text, unfurl_links: false, unfurl_media: false };
+    assertBotPostArgs(args); // never as_user, never user
+    const res = await this.web.chat.postMessage(args);
     if (!res.ts) throw Object.assign(new Error('no ts'), { code: 'slack_no_ts' });
     return res.ts;
   }
@@ -180,11 +184,21 @@ export class SlackChannel implements ChannelAdapter {
     return (res.messages ?? []).map((m) => ({ user: m.user ?? m.bot_profile?.user_id ?? null, text: m.text ?? '', ts: m.ts ?? '' }));
   }
 
-  /** Token check at start: an invalid or revoked token fails closed for this CAO only. */
-  async authTest(): Promise<{ userId: string }> {
+  /** The text of one Slack message, fetched from Slack by channel and ts (message text is never stored in the brain). */
+  async messageText(channel: string, ts: string): Promise<string | null> {
+    const res = await this.web.conversations.history({ channel, latest: ts, inclusive: true, limit: 1 });
+    const m = res.messages?.[0];
+    if (m?.ts === ts) return m.text ?? null;
+    const rep = await this.web.conversations.replies({ channel, ts, latest: ts, inclusive: true, limit: 1 }).catch(() => null);
+    const r = rep?.messages?.find((x) => x.ts === ts);
+    return r?.text ?? null;
+  }
+
+  /** Token check at start: an invalid or revoked token fails closed for this CAO only; the answer must carry a bot_id. */
+  async authTest(): Promise<{ userId: string; botId: string }> {
     const res = await this.web.auth.test();
     if (!res.user_id) throw Object.assign(new Error('auth.test returned no user'), { code: 'slack_auth' });
-    return { userId: res.user_id };
+    return { userId: res.user_id, botId: requireBotId(res) };
   }
 
   listen(): AsyncIterable<ChannelEvent> {

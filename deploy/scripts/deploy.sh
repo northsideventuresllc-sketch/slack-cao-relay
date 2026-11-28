@@ -11,7 +11,7 @@
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 src="$(cd "$(dirname "$0")/../.." && pwd)"
-CAOS="muse claude gemini axon-hermes"
+CAOS="muse claude gemini axon"
 
 # --- Retire the pre-rename cto-relay install (CTO -> CAO cutover; see docs/CAO-CUTOVER.md) -----
 # Idempotent: does nothing when no cto-relay unit/dir exists. Stops and disables the old units,
@@ -33,6 +33,10 @@ for f in /etc/systemd/system/cto-heartbeat.service /etc/systemd/system/cto-heart
   [ -e "$f" ] && rm -f "$f" && echo "removed old $f"
 done
 systemctl daemon-reload
+# The AXON relay is named `axon` (it was `axon-hermes`): stop the old unit, retire its files, carry its state over.
+systemctl disable --now cao-relay-axon-hermes 2>/dev/null || true
+rm -f /etc/systemd/system/cao-relay-axon-hermes.service
+if [ -d /var/lib/cao-relay/axon-hermes ] && [ ! -e /var/lib/cao-relay/axon ]; then mv /var/lib/cao-relay/axon-hermes /var/lib/cao-relay/axon && echo "moved axon-hermes state -> axon"; fi
 if [ -d /var/lib/cto-relay ] && [ ! -e /var/lib/cao-relay ]; then mv /var/lib/cto-relay /var/lib/cao-relay && echo "moved /var/lib/cto-relay -> /var/lib/cao-relay"; fi
 if [ -d /etc/cto-relay ] && [ ! -e /etc/cao-relay ]; then mv /etc/cto-relay /etc/cao-relay && echo "moved /etc/cto-relay -> /etc/cao-relay (edit CTO_RELAY_* to CAO_RELAY_* in relay.env; old names still work)"; fi
 if [ -d /opt/cto-relay ]; then rm -rf /opt/cto-relay && echo "removed /opt/cto-relay"; fi
@@ -48,9 +52,8 @@ done
 for c in $CAOS; do
   [ -d "/var/lib/cao-relay/$c" ] && chown -R "cao-relay-$c:cao-relay-$c" "/var/lib/cao-relay/$c"
 done
-# Muse must be able to hand each broker socket to that CAO's group.
-usermod -a -G cao-relay-admin,cao-relay-claude,cao-relay-gemini,cao-relay-axon-hermes cao-relay-muse
-for c in claude gemini axon-hermes; do usermod -a -G cao-relay-admin "cao-relay-$c"; done
+# Every relay is independent (no broker, no Muse-held key): each service user reaches only the admin socket group.
+for c in muse claude gemini axon; do usermod -a -G cao-relay-admin "cao-relay-$c"; done
 
 install -d -m 0755 /etc/cao-relay
 if [ "${1:-}" = "--vault-token-stdin" ]; then
@@ -94,4 +97,4 @@ echo
 echo "Installed commit $commit, config hash $chash."
 echo "Update the vault file cao-relay-expected.json to:"
 printf '{ "commit": "%s", "configHash": "%s", "deployedAt": "%s" }\n' "$commit" "$chash" "$(date -u +%FT%TZ)"
-echo "Then: systemctl enable --now cao-heartbeat.timer cao-relay-offhost-copy.timer cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon-hermes"
+echo "Then: systemctl enable --now cao-heartbeat.timer cao-relay-offhost-copy.timer cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon"

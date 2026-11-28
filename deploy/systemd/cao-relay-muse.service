@@ -2,13 +2,11 @@
 # Slack CAO Loop relay — Muse CAO. One of four separate services (PLAN-v7 D6):
 # shared code, separate process, separate service user, separate keys, queue and journal.
 #
-# Keys (D7): ExecStartPre runs /usr/local/bin/cao-relay-fetch-keys muse as root on EVERY
-# start; it fetches fresh from the Secure Vault into tmpfs /run/credentials/cao-relay-muse/
-# (dir 0500, files 0400, owner cao-relay-muse) and the process reads them from there
-# (CAO_RELAY_KEY_DIR). Files:
-#   slack-app-token  (Socket Mode app-level token)
-#   slack-bot-token  (bot token)
-#   brain-key        (Muse only: cao-relay-muse brain key — the other three programs reach the brain through the Muse program's broker)
+# Keys: the Slack bot and app tokens come only from the doorman. The relay reads ITS OWN
+# identity token from the systemd credential `doorman-identity` (LoadCredential below) and asks the
+# doorman for CAO_RELAY_MUSE_BOT_TOKEN and CAO_RELAY_MUSE_APP_TOKEN (job cao-relay). ExecStartPre
+# cao-relay-fetch-keys muse writes only the NI Brain key (brain-key) and the read-only vault deploy
+# key to tmpfs /run/credentials/cao-relay-muse/ (CAO_RELAY_KEY_DIR).
 # No key value ever appears in this file.
 
 [Unit]
@@ -22,7 +20,7 @@ StartLimitIntervalSec=0
 Type=simple
 User=cao-relay-muse
 Group=cao-relay-muse
-SupplementaryGroups=cao-relay-admin cao-relay-claude cao-relay-gemini cao-relay-axon-hermes
+SupplementaryGroups=cao-relay-admin
 EnvironmentFile=/etc/cao-relay/relay.env
 Environment=CAO_RELAY_CAO=muse
 Environment=CAO_RELAY_KEY_DIR=/run/credentials/cao-relay-muse
@@ -31,6 +29,7 @@ Environment=CAO_RELAY_RUN_DIR=/run/cao-relay
 Environment=CAO_RELAY_HOLDER=vm
 # Each program reads back close-out logs from its own vault checkout (git fetch, read-only use).
 Environment=CAO_RELAY_VAULT_DIR=/var/lib/cao-relay/muse/vault
+LoadCredential=doorman-identity:/etc/credstore/doorman-identity-muse
 ExecStartPre=+/usr/local/bin/cao-relay-fetch-keys muse
 ExecStart=/usr/bin/node /opt/cao-relay/dist/index.js run
 ExecStopPost=+/usr/local/bin/cao-relay-fetch-keys --wipe muse
@@ -42,8 +41,7 @@ RestartPreventExitStatus=78
 
 StateDirectory=cao-relay/muse
 StateDirectoryMode=0700
-# /run/cao-relay/<cao> (control socket) and /run/cao-relay/broker come from
-# /etc/tmpfiles.d/cao-relay.conf so the broker and admin groups can reach them.
+# /run/cao-relay/<cao> (control socket) comes from /etc/tmpfiles.d/cao-relay.conf so the admin group can reach it.
 UMask=0077
 
 # Isolation envelope (D6): MemoryMax=128M, CPUQuota=25%. The program's own watchdog

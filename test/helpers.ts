@@ -2,7 +2,6 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import {
   BrainError,
   relayEvidence,
@@ -13,6 +12,7 @@ import {
   type HeartbeatRow,
   type LeaseRow,
   type NewFireRow,
+  newRelayRowId,
 } from '../src/brain.js';
 import { Blocklist } from '../src/blocklist.js';
 import { Breaker } from '../src/breaker.js';
@@ -35,8 +35,8 @@ import { REPO_ROOT } from '../src/config.js';
 /** Registry with test channel ids and agent names filled in (the real file carries placeholders until Phase 3). */
 export function testRegistry(): Registry {
   const r = loadRegistry();
-  const ids: Record<string, string> = { muse: 'CMUSE0001', claude: 'CCLAUDE01', gemini: 'CGEMINI01', 'axon-hermes': 'CAXON0001' };
-  const agents: Record<string, string> = { muse: 'MUSE', claude: 'Claude CAO', gemini: 'Gemini CAO', 'axon-hermes': 'AXON-Hermes CAO' };
+  const ids: Record<string, string> = { muse: 'CMUSE0001', claude: 'CCLAUDE01', gemini: 'CGEMINI01', axon: 'CAXON0001' };
+  const agents: Record<string, string> = { muse: 'MUSE', claude: 'Claude CAO', gemini: 'Gemini CAO', axon: 'AXON CAO' };
   return { ...r, caos: r.caos.map((c) => ({ ...c, channelId: ids[c.key] ?? c.channelId, agentName: agents[c.key] ?? c.agentName })) };
 }
 
@@ -52,10 +52,10 @@ export class FakeBrain implements BrainApi {
   rows = new Map<string, FireRow>();
   leases = new Map<string, LeaseRow>();
   heartbeats = new Map<string, HeartbeatRow>();
-  alerts: Array<{ toAgent: string; subject: string }> = [];
   down = false;
   delayMs = 0; // simulate a slow (answering) brain
   insertOrder: string[] = [];
+  private seq = 0;
   constructor(private readonly clock: FakeClock) {}
 
   private check(): void {
@@ -70,23 +70,17 @@ export class FakeBrain implements BrainApi {
   async insertFireRow(row: NewFireRow): Promise<FireRow> {
     this.check();
     await this.slow();
-    const id = randomUUID();
+    const id = newRelayRowId(this.clock.now(), () => String(++this.seq).padStart(4, '0'));
     const r: FireRow = {
       id,
       created_at: new Date(this.clock.now()).toISOString(),
       from_agent: row.fromAgent,
-      from_harness: 'cao-relay',
       to_agent: row.toAgent,
-      to_harness: row.toHarness,
-      channel: 'slack',
-      subject: row.subject,
-      body: row.body,
       status: 'queued',
       fired_at: row.firedAt,
       completed_at: null,
       evidence: { relay: row.evidence },
-      parent_id: null,
-      code: 'cao-relay-fire',
+      slack_link: `https://test.slack.com/archives/${row.evidence.slack?.channel_id ?? 'C0'}`,
     };
     this.rows.set(id, r);
     this.insertOrder.push(id);
@@ -115,15 +109,6 @@ export class FakeBrain implements BrainApi {
     if (patch.completed_at !== undefined) r.completed_at = patch.completed_at;
     if (patch.evidence !== undefined) r.evidence = { relay: patch.evidence };
     return structuredClone(r);
-  }
-  async countStarts(sinceIso: string, toAgent?: string, untilIso?: string): Promise<number> {
-    this.check();
-    await this.slow();
-    return [...this.rows.values()].filter((r) => (r.fired_at ?? '') >= sinceIso && (!untilIso || (r.fired_at ?? '') < untilIso) && !['refused', 'cancelled'].includes(r.status ?? '') && (!toAgent || r.to_agent === toAgent)).length;
-  }
-  async insertAlertRow(toAgent: string, _from: string, subject: string): Promise<void> {
-    this.check();
-    this.alerts.push({ toAgent, subject });
   }
   async getLease(name: string): Promise<LeaseRow | null> {
     this.check();
@@ -195,7 +180,7 @@ export interface Harness {
   advance(ms: number): Promise<void>;
 }
 
-export async function makeHarness(caoKey: CaoKey = 'muse', opts: { dir?: string; clock?: FakeClock; brain?: FakeBrain } = {}): Promise<Harness> {
+export async function makeHarness(caoKey: CaoKey = 'muse', opts: { dir?: string; clock?: FakeClock; brain?: FakeBrain; fetchTask?: (link: string) => Promise<string | null> } = {}): Promise<Harness> {
   const dir = opts.dir ?? mkdtempSync(join(tmpdir(), 'cao-relay-test-'));
   const clock = opts.clock ?? new FakeClock();
   const brain = opts.brain ?? new FakeBrain(clock);
@@ -231,7 +216,7 @@ export async function makeHarness(caoKey: CaoKey = 'muse', opts: { dir?: string;
     book,
     dedup,
     breaker: new Breaker(journal, cao.key),
-    caps: new CostEnvelope({ ...registry.caps, dailyStartCapTotal: 100, monthlyStartCapTotal: 100 }, cao, journal, 'America/New_York'),
+    caps: new CostEnvelope(registry.caps),
     quarantine: new Quarantine(dir, clock.now),
     runlog,
     poster,
@@ -239,6 +224,7 @@ export async function makeHarness(caoKey: CaoKey = 'muse', opts: { dir?: string;
     metrics: new Metrics(),
     blocklist,
     alert,
+    fetchTask: opts.fetchTask,
     schedule: (_ms, fn) => void scheduled.push(fn),
     sleep: async () => undefined,
   });
@@ -275,5 +261,5 @@ export function mention(h: Harness, target: CaoKey, text: string, opts: Partial<
 }
 
 export function fireIdFromReply(text: string): string | null {
-  return /fire id ([0-9a-zp-][0-9a-f-]+)/i.exec(text)?.[1] ?? null;
+  return /fire id ((?:relay|p)-[0-9a-f-]+)/i.exec(text)?.[1] ?? null;
 }

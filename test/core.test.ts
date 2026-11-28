@@ -17,7 +17,7 @@ test('write order: brain row → journal → short reply; reply says "started au
   assert.equal(req?.hash.length, 64);
   assert.ok(!JSON.stringify(h.journal.all()).includes('Match Fit'), 'journal holds hashes only');
   const reply = h.sender.texts()[0]!;
-  assert.match(reply, /^Started: Build the Match Fit email groups — fire id [0-9a-f-]+ — started automatically — run link to follow\.$/);
+  assert.match(reply, /^Started: Build the Match Fit email groups — fire id relay-[0-9a-f-]+ — started automatically — run link to follow\.$/);
   assert.equal(fireIdFromReply(reply), id);
   assert.ok(!/fired/i.test(reply));
 });
@@ -185,8 +185,6 @@ test('reconciler: a brain row with no journal entry (journal-failure orphan) is 
     toAgent: 'Claude CAO',
     fromAgent: 'MUSE',
     toHarness: 'claude',
-    subject: 's',
-    body: 'b',
     firedAt: new Date(h.clock.now()).toISOString(),
     evidence: { v: 0, cao: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } },
   });
@@ -266,7 +264,7 @@ test('restore: re-posts a failed short reply from the brain row and posts the cu
   h.sender.fail = true;
   await h.core.handleEvent(mention(h, 'claude', 'fire: restore me'));
   h.sender.fail = false;
-  const h2 = await makeHarness('claude', { dir: h.dir, clock: h.clock, brain: h.brain });
+  const h2 = await makeHarness('claude', { dir: h.dir, clock: h.clock, brain: h.brain, fetchTask: async () => 'restore me' }); // the text is read back from Slack by the pointer's link
   await new Maintenance(h2.core).restore();
   assert.match(h2.sender.texts()[0]!, /^Started: restore me/);
   assert.match(h2.sender.texts()[1]!, /^Still waiting: fire id/);

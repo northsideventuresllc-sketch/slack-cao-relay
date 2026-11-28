@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentNameAliases, canonicalAgentName, withLegacyEnv } from '../src/legacy.js';
+import { withLegacyEnv } from '../src/legacy.js';
 import { loadConfig, loadRegistry } from '../src/config.js';
 
 test('legacy env: CAO_RELAY_* wins, CTO_RELAY_* fills the gaps, CTO_RELAY_CTO maps to CAO_RELAY_CAO', () => {
@@ -16,19 +16,13 @@ test('legacy env: loadConfig runs from a pure CTO_RELAY_* environment', () => {
   assert.equal(cfg.stateDir, '/tmp/x');
 });
 
-test('legacy agent names map old CTO spellings to the CAO names, and back for query filters', () => {
-  assert.equal(canonicalAgentName('Claude CTO'), 'Claude CAO');
-  assert.equal(canonicalAgentName('AXON-Hermes CTO'), 'AXON-Hermes CAO');
-  assert.equal(canonicalAgentName('MUSE CTO'), 'MUSE');
-  assert.equal(canonicalAgentName('Claude CAO'), 'Claude CAO');
-  assert.equal(canonicalAgentName('CTO Monitor'), 'CTO Monitor');
-  assert.deepEqual(agentNameAliases('Gemini CAO'), ['Gemini CAO', 'Gemini CTO']);
-  assert.deepEqual(agentNameAliases('Gemini CTO'), ['Gemini CAO', 'Gemini CTO']);
+test('legacy env: the old axon-hermes relay key is read as axon', () => {
+  assert.equal(withLegacyEnv({ CAO_RELAY_CAO: 'axon-hermes' }).CAO_RELAY_CAO, 'axon');
 });
 
 test('registry: CAO agent names, #cao-* channel names, no CTO left', () => {
   const r = loadRegistry();
-  assert.deepEqual(r.caos.map((c) => c.agentName), ['MUSE', 'Claude CAO', 'Gemini CAO', 'AXON-Hermes CAO']);
+  assert.deepEqual(r.caos.map((c) => c.agentName), ['MUSE', 'Claude CAO', 'Gemini CAO', 'AXON CAO']);
   assert.deepEqual(r.caos.map((c) => c.channelName), ['cao-muse', 'cao-claude', 'cao-gemini', 'cao-axon']);
   assert.equal(JSON.stringify(r).includes('CTO'), false);
   assert.equal(JSON.stringify(r).includes('cto'), false);

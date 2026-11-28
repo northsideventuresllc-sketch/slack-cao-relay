@@ -1,32 +1,29 @@
-// Alerts to Muse CAO (main chat). Transport: an agent_comms row addressed to
-// MUSE with code `cao-relay-alert` (drained like other Muse mail), plus a local
-// alerts file that is always written — so an alert survives a brain outage.
-// Alerts carry machine codes and ids only.
+// Alerts. A local alerts file that is always written (it survives a brain outage and is read at the
+// 9am check-in) plus a log line. Alerts carry machine codes and ids only. There is no brain row for an
+// alert: the old comms table is retired, and message text never goes into the brain. The alert also becomes a
+// run row (kind `alert`) in the relay's own run log, so the relay's own harness CAO sees it with the runs.
 
 import { join } from 'node:path';
-import type { BrainApi } from './brain.js';
+import type { RunLog } from './runlog.js';
 import { appendLineCapped } from './util/durable.js';
 import type { Logger } from './util/log.js';
 import { iso, type Clock } from './util/time.js';
 
-export const ALERT_TO_AGENT = 'MUSE';
-
 export class Alerter {
   readonly path: string;
-  private brain: BrainApi | null = null;
+  private runlog: RunLog | null = null;
 
   constructor(
     stateDir: string,
     private readonly cao: string,
-    private readonly fromAgent: string,
     private readonly clock: Clock,
     private readonly log: Logger,
   ) {
     this.path = join(stateDir, 'alerts.jsonl');
   }
 
-  attachBrain(brain: BrainApi): void {
-    this.brain = brain;
+  attachRunLog(runlog: RunLog): void {
+    this.runlog = runlog;
   }
 
   alert(code: string, ids: Record<string, string | number | null> = {}): void {
@@ -36,13 +33,11 @@ export class Alerter {
     } catch {
       this.log.error('alert file write failed', { code });
     }
-    this.log.warn('alert', { code, ...ids });
-    const brain = this.brain;
-    if (brain) {
-      const subject = `cao-relay alert: ${this.cao}: ${code}`;
-      brain.insertAlertRow(ALERT_TO_AGENT, this.fromAgent, subject, JSON.stringify(rec)).catch(() => {
-        this.log.warn('alert row write failed; local alert file holds it', { code });
-      });
+    try {
+      this.runlog?.write({ kind: 'alert', fireId: typeof ids.fireId === 'string' ? ids.fireId : null, writer: 'relay', reason: code });
+    } catch {
+      // the alerts file already holds it
     }
+    this.log.warn('alert', { code, ...ids });
   }
 }

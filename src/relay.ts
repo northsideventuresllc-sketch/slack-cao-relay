@@ -10,21 +10,24 @@ import { Alerter } from './alerts.js';
 import { withLegacyEnv } from './legacy.js';
 import { makeAdapter } from './adapters/handoff.js';
 import { Blocklist } from './blocklist.js';
-import { DirectBrain, type BrainApi } from './brain.js';
+import { DirectBrain, parseSlackLink, type BrainApi } from './brain.js';
+import { EXIT_RETRY, Fatal, bootstrapRelay } from './bootstrap.js';
+import { HttpDoorman, IdentityUnavailable, readIdentityToken } from './doorman.js';
+import { FireLedger } from './ledger.js';
+import { parseStart } from './parser.js';
 import { Breaker } from './breaker.js';
-import { BrokerServer, BrokeredBrain, brokerSocketPath } from './broker.js';
 import { CostEnvelope } from './caps.js';
 import { SlackChannel, EXIT_STAY_DOWN } from './channel/slack.js';
 import { Closeouts } from './closeout.js';
 import { isPlaceholder, placeholdersBlocking, type RelayConfig } from './config.js';
 import { ControlServer, controlSocketPath, type ControlCommand } from './control.js';
 import { RelayCore, CHECKIN_HOUR } from './core.js';
-import { CRED_BRAIN, CRED_SLACK_APP, CRED_SLACK_BOT, readCredential } from './credentials.js';
+import { CRED_BRAIN, readCredential } from './credentials.js';
 import { Dedup } from './dedup.js';
 import { FireBook } from './firebook.js';
 import { HealthServer } from './health.js';
 import { Journal } from './journal.js';
-import { LeaseHeldElsewhere, LeaseManager } from './lease.js';
+import type { LeaseManager } from './lease.js';
 import { Maintenance } from './maintenance.js';
 import { Metrics } from './metrics.js';
 import { MirrorWriter } from './mirror.js';
@@ -39,13 +42,7 @@ import { ensureDir } from './util/durable.js';
 import { createLogger, errorCode, type Logger } from './util/log.js';
 import { HOUR, MIN, nextLocalTime, realClock, zonedParts, type Clock } from './util/time.js';
 
-export const EXIT_RETRY = 1; // systemd Restart=on-failure retries (brain down, lease held elsewhere)
-
-class Fatal extends Error {
-  constructor(readonly exitCode: number, readonly reason: string) {
-    super(reason);
-  }
-}
+export { EXIT_RETRY };
 
 /** A promise-chain mutex: Slack events, control commands and timers run one at a time. */
 class Lane {
@@ -64,7 +61,6 @@ export class RelayProgram {
   private slack: SlackChannel | null = null;
   private health: HealthServer | null = null;
   private control: ControlServer | null = null;
-  private broker: BrokerServer | null = null;
   private lease: LeaseManager | null = null;
   private socketUp = false;
   private readonly lane = new Lane();
@@ -105,40 +101,52 @@ export class RelayProgram {
     if (blocked.length) throw new Fatal(EXIT_STAY_DOWN, `config placeholders unset in config/registry.json (CAO_RELAY_REGISTRY): ${blocked.join(',')}`);
 
     ensureDir(cfg.stateDir, 0o700);
-    const appToken = readCredential(cfg.credentialsDir, CRED_SLACK_APP);
-    const botToken = readCredential(cfg.credentialsDir, CRED_SLACK_BOT);
 
-    const alerter = new Alerter(cfg.stateDir, cao.key, cao.agentName, this.clock, this.log);
+    const alerter = new Alerter(cfg.stateDir, cao.key, this.clock, this.log);
     const alert = (code: string, ids?: Record<string, string | number | null>): void => alerter.alert(code, ids);
 
-    // Brain: Muse holds the key (D7); the other three go through the Muse program's broker.
-    let brain: BrainApi;
-    if (isMuse) {
-      if (!cfg.supabaseUrl) throw new Fatal(EXIT_STAY_DOWN, 'SUPABASE_URL not set');
-      brain = new DirectBrain({ supabaseUrl: cfg.supabaseUrl, apiKey: readCredential(cfg.credentialsDir, CRED_BRAIN), httpsProxy: cfg.httpsProxy, timeoutMs: 1500 });
-    } else {
-      brain = new BrokeredBrain(brokerSocketPath(cfg.runDir, cao.key));
-    }
+    // This relay's own doorman identity, from this machine's sign-in store. A failure stops only this relay.
+    if (!cfg.doormanUrl || !cfg.publishableKey || !cfg.supabaseUrl) throw new Fatal(EXIT_STAY_DOWN, 'doorman url, publishable key or SUPABASE_URL not set');
+    let identityToken: string;
     try {
-      await brain.ping();
-    } catch {
-      throw new Fatal(EXIT_RETRY, 'brain unreachable at startup (fail-closed)');
-    }
-    alerter.attachBrain(brain);
-
-    if (isMuse) {
-      this.broker = new BrokerServer(brain, cfg.runDir, this.log);
-      this.broker.start(cfg.registry.caos.filter((c) => c.adapter === 'manual' && !isPlaceholder(c.agentName)));
-    }
-
-    const lease = new LeaseManager(brain, cao.key, `${cfg.holder}:cao-relay-${cao.key}`, this.clock, this.log, (code) => alert(code));
-    this.lease = lease;
-    try {
-      await lease.acquire();
+      identityToken = readIdentityToken(cao.harnessIdentity, { identityDir: cfg.identityDir });
     } catch (err) {
-      if (err instanceof LeaseHeldElsewhere) throw new Fatal(EXIT_RETRY, 'lease held by another live holder');
-      throw new Fatal(EXIT_RETRY, 'lease acquisition failed (fail-closed)');
+      if (err instanceof IdentityUnavailable) throw new Fatal(EXIT_STAY_DOWN, err.message);
+      throw err;
     }
+    const doorman = new HttpDoorman({ url: cfg.doormanUrl, publishableKey: cfg.publishableKey, identityToken, httpsProxy: cfg.httpsProxy });
+
+    // Every relay reaches the brain itself (no broker, no Muse-held key). Run state lives in this relay's ledger.
+    const supabaseUrl = cfg.supabaseUrl;
+    const ledger = new FireLedger(join(cfg.stateDir, 'fire-ledger.json'));
+    const { brain, lease, slack } = await bootstrapRelay(cfg, {
+      doorman,
+      makeBrain: () =>
+        new DirectBrain({
+          supabaseUrl,
+          apiKey: readCredential(cfg.credentialsDir, CRED_BRAIN),
+          httpsProxy: cfg.httpsProxy,
+          timeoutMs: 1500,
+          ledger,
+          directory: { slackDomain: cfg.registry.workspace.domain, caoBotsChannelId: cfg.registry.caoBotsChannelId, caos: cfg.registry.caos },
+        }),
+      makeSlack: (t) =>
+        new SlackChannel({
+          appToken: t.appToken,
+          botToken: t.botToken,
+          httpsProxy: cfg.httpsProxy,
+          log: this.log,
+          onFatal: (code) => {
+            alert(code);
+            this.onFatal(EXIT_STAY_DOWN);
+          },
+        }),
+      clock: this.clock,
+      log: this.log,
+      alert,
+    });
+    this.slack = slack;
+    this.lease = lease;
     lease.startHeartbeat();
 
     const journal = new Journal(join(cfg.stateDir, 'journal.jsonl'), this.clock);
@@ -152,28 +160,9 @@ export class RelayProgram {
     });
     dedup.loadFromJournal(journal.all());
     const runlog = new RunLog(cfg.stateDir, cao.key, this.clock);
+    alerter.attachRunLog(runlog);
     const blocklist = Blocklist.fromFile(cfg.blocklistPath);
     const metrics = new Metrics();
-
-    const slack = new SlackChannel({
-      appToken,
-      botToken,
-      httpsProxy: cfg.httpsProxy,
-      log: this.log,
-      onFatal: (code) => {
-        alert(code);
-        this.onFatal(EXIT_STAY_DOWN);
-      },
-    });
-    this.slack = slack;
-    try {
-      const me = await slack.authTest();
-      if (me.userId !== cao.botUserId) throw new Fatal(EXIT_STAY_DOWN, 'bot token belongs to a different bot user');
-    } catch (err) {
-      if (err instanceof Fatal) throw err;
-      alert('token-revoked-or-invalid');
-      throw new Fatal(EXIT_STAY_DOWN, 'Slack bot token rejected (fails closed for this CAO only)');
-    }
 
     const poster = new Poster(slack, lease, blocklist, cfg.registry.caos, runlog, this.log, alert);
     const adapter = makeAdapter(brain, cao, this.clock);
@@ -190,7 +179,15 @@ export class RelayProgram {
       book,
       dedup,
       breaker: new Breaker(journal, cao.key),
-      caps: new CostEnvelope(cfg.registry.caps, cao, journal, cfg.timezone),
+      caps: new CostEnvelope(cfg.registry.caps),
+      fetchTask: async (link) => {
+        const p = parseSlackLink(link);
+        if (!p?.ts) return null;
+        const text = await slack.messageText(p.channelId, p.ts);
+        if (!text) return null;
+        const parsed = parseStart({ eventId: '', channelId: p.channelId, authorId: '', text, timestamp: p.ts, ingress: 'app_mention' }, cao, cfg.registry);
+        return parsed.kind === 'start' ? parsed.task : null;
+      },
       quarantine: new Quarantine(cfg.stateDir, this.clock),
       runlog,
       poster,
@@ -291,6 +288,7 @@ export class RelayProgram {
       });
       if (duties && cfg.archiveDir) {
         const archived = await duties.archiveOldRows(cfg.archiveDir);
+        ledger.pruneArchived(this.clock(), 120 * 24 * HOUR);
         this.log.info('brain rows archived', { archived });
       }
     });
@@ -423,7 +421,6 @@ export class RelayProgram {
     for (const t of this.timers) clearInterval(t);
     this.lease?.stop();
     this.control?.stop();
-    this.broker?.stop();
     this.health?.close();
     await this.slack?.stop();
     this.socketUp = false;

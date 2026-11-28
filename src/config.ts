@@ -8,7 +8,18 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { withLegacyEnv } from './legacy.js';
 
-export const CAO_KEYS = ['muse', 'claude', 'gemini', 'axon-hermes'] as const;
+export const CAO_KEYS = ['muse', 'claude', 'gemini', 'axon'] as const;
+
+/** Doorman harness identities (aos_safe.harness_identities). AXON CAO runs in Hermes, so relay `axon` is `hermes`. */
+export const HARNESS_IDENTITIES = ['muse', 'claude_code', 'gemini_antigravity', 'hermes'] as const;
+export type HarnessIdentity = (typeof HARNESS_IDENTITIES)[number];
+/** The one identity each relay may use. */
+export const IDENTITY_FOR_CAO: Readonly<Record<'muse' | 'claude' | 'gemini' | 'axon', HarnessIdentity>> = {
+  muse: 'muse',
+  claude: 'claude_code',
+  gemini: 'gemini_antigravity',
+  axon: 'hermes',
+};
 export type CaoKey = (typeof CAO_KEYS)[number];
 
 const PLACEHOLDER = /^<[^>]+>$/;
@@ -18,6 +29,7 @@ const CaoEntrySchema = z.object({
   displayName: z.string().min(1),
   appId: z.string().min(1),
   botUserId: z.string().min(1),
+  harnessIdentity: z.enum(HARNESS_IDENTITIES),
   adapter: z.enum(['automatic-muse', 'manual']),
   agentName: z.string().min(1),
   channelId: z.string().min(1),
@@ -29,16 +41,18 @@ const CaoEntrySchema = z.object({
 });
 export type CaoEntry = z.infer<typeof CaoEntrySchema>;
 
-const CapsSchema = z.object({
-  perFireTokenBudget: z.number().int().positive(),
-  monthlyTokenCeiling: z.number().int().positive(),
-  weeklyStartFloor: z.number().int().positive(),
-  dailyStartCapTotal: z.number().int().positive(),
-  monthlyStartCapTotal: z.number().int().positive(),
-  perCaoWeeklyManualCap: z.number().int().positive(),
-  manualMinutesPerStart: z.number().int().positive(),
-  dailyManualMinutesCeiling: z.number().int().positive(),
-});
+/**
+ * Cost REPORTING numbers only. There are no start caps: no daily total, no monthly total, no per-CAO weekly
+ * cap. A relay never refuses a start for count or cost; the Token Accountant reports cost to the CAO.
+ * `.strict()` so a registry that still carries a removed cap key is rejected as unknown.
+ */
+const CapsSchema = z
+  .object({
+    perFireTokenBudget: z.number().int().positive(),
+    monthlyTokenCeiling: z.number().int().positive(),
+    weeklyStartFloor: z.number().int().positive(),
+  })
+  .strict();
 export type Caps = z.infer<typeof CapsSchema>;
 
 export const RegistrySchema = z.object({
@@ -49,11 +63,20 @@ export const RegistrySchema = z.object({
   healthBind: z.array(z.string().min(1)).min(1),
   caos: z.array(CaoEntrySchema).length(4),
   caps: CapsSchema,
+}).superRefine((r, ctx) => {
+  for (const c of r.caos) {
+    if (c.harnessIdentity !== IDENTITY_FOR_CAO[c.key]) {
+      ctx.addIssue({ code: 'custom', message: `${c.key} must use harness identity ${IDENTITY_FOR_CAO[c.key]}` });
+    }
+  }
 });
 export type Registry = z.infer<typeof RegistrySchema>;
 
 const EnvSchema = z.object({
   CAO_RELAY_CAO: z.enum(CAO_KEYS),
+  CAO_RELAY_DOORMAN_URL: z.string().url().optional(),
+  SUPABASE_PUBLISHABLE_KEY: z.string().min(1).optional(),
+  NVG_DOORMAN_URL: z.string().url().optional(),
   CAO_RELAY_STATE_DIR: z.string().min(1).optional(),
   CAO_RELAY_REGISTRY: z.string().min(1).optional(),
   CAO_RELAY_BLOCKLIST: z.string().min(1).optional(),
@@ -90,8 +113,11 @@ export interface RelayConfig {
   mirrorDir: string | null; // Muse only
   archiveDir: string | null; // Muse only: brain rows past 90 days, filed into the vault nightly (R7-FU-12)
   healthBind: string[];
-  supabaseUrl: string | null; // Muse only (direct brain access); others use the broker
-  credentialsDir: string | null;
+  supabaseUrl: string | null; // every relay reaches the brain itself
+  credentialsDir: string | null; // brain-key and the vault deploy key (tmpfs)
+  identityDir: string | null; // $CREDENTIALS_DIRECTORY: holds this relay's own `doorman-identity` (systemd LoadCredential)
+  doormanUrl: string | null;
+  publishableKey: string | null;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
 
@@ -154,6 +180,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     supabaseUrl: e.SUPABASE_URL ?? null,
     // The ExecStartPre tmpfs dir wins (fresh fetch on every start, D7); $CREDENTIALS_DIRECTORY is the fallback.
     credentialsDir: e.CAO_RELAY_KEY_DIR ?? e.CREDENTIALS_DIRECTORY ?? null,
+    identityDir: e.CREDENTIALS_DIRECTORY ?? null,
+    doormanUrl: e.CAO_RELAY_DOORMAN_URL ?? e.NVG_DOORMAN_URL ?? null,
+    publishableKey: e.SUPABASE_PUBLISHABLE_KEY ?? null,
     logLevel: e.CAO_RELAY_LOG_LEVEL,
   };
 }
@@ -166,10 +195,4 @@ export function caoChannelIds(registry: Registry): Set<string> {
 /** Authors allowed to start work: the four CAO bots plus any configured extras. */
 export function allowedAuthors(registry: Registry): Set<string> {
   return new Set([...registry.caos.map((c) => c.botUserId), ...registry.allowlist.extraAuthorIds]);
-}
-
-/** Effective daily start cap: the lower of the daily cap and the manual-minutes ceiling (D4 manual budget). */
-export function effectiveDailyCap(caps: Caps): number {
-  const manualPerDay = Math.floor(caps.dailyManualMinutesCeiling / caps.manualMinutesPerStart);
-  return Math.min(caps.dailyStartCapTotal, manualPerDay);
 }

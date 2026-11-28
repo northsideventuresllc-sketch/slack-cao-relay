@@ -73,15 +73,13 @@ test('close-out: no read-back → nothing claiming completion is posted; the map
   assert.equal(h.brain.rows.get(id)?.status, 'closed');
 });
 
-test('close-out over the token budget: flagged, and the next start for that CAO is refused until the Monday review', async () => {
+test('close-out over the token budget: flagged for the Monday review, and the next start is NOT refused (no cost refusals)', async () => {
   const { h, id, co } = await linkedRun('claude');
   await co.submit({ fireId: id, vaultLogPath: 'x/log.md', sessionUrl: null, tokens: 30_000, minutes: 10 });
   await h.advance(31 * MIN);
+  assert.ok(h.alerts.includes('run-over-token-budget'));
   await h.core.handleEvent(mention(h, 'claude', 'fire: next'));
-  assert.match(h.sender.texts().at(-1)!, /Starts resume after the Monday review/);
-  h.core.reviewClear();
-  await h.core.handleEvent(mention(h, 'claude', 'fire: next again'));
-  assert.match(h.sender.texts().at(-1)!, /^Started: next again/);
+  assert.match(h.sender.texts().at(-1)!, /^Started: next/);
 });
 
 test('close-out without any session link is refused (no map ever carries a null link)', async () => {

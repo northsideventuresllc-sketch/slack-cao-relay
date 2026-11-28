@@ -1,5 +1,5 @@
 {
-  "$comment": "CAO registry — the single source for which adapter serves which CAO (PLAN-v7 D6). IDs from RUNBOOK.md Phase 1 verification (2026-11-05). Agent names: MUSE verified from a live agent_comms row (RUNBOOK Phase 1); Claude CAO confirmed by JB (live rows carry it; PLAN-v7 D7 wrote CLAUDE); Gemini CAO set by COUNCIL GATE round 1 (seen in live rows); AXON-Hermes CAO set by COUNCIL GATE round 1 and confirmed by JB (matches the Slack bot name). Values in <ANGLE_BRACKETS> are placeholders: the relay refuses to start while any placeholder remains. Channel ids and names recorded 2026-11-25 from the live Slack workspace (#cao-bots, #cao-muse, #cao-claude, #cao-gemini, #cao-axon; all public, created 2026-11-20). The axon-hermes relay posts to #cao-axon.",
+  "$comment": "CAO registry — the single source for which adapter serves which CAO (PLAN-v7 D6). IDs from RUNBOOK.md Phase 1 verification (2026-11-05). Agent names: MUSE, Claude CAO, Gemini CAO, AXON CAO. harnessIdentity is the one doorman identity each relay asks with (muse, claude_code, gemini_antigravity, hermes). AXON CAO is the name of the AXON app and bot (Hermes is the harness; v4.0 cutover). Values in <ANGLE_BRACKETS> are placeholders: the relay refuses to start while any placeholder remains. Channel ids and names recorded 2026-11-25 from the live Slack workspace (#cao-bots, #cao-muse, #cao-claude, #cao-gemini, #cao-axon; all public, created 2026-11-20). The axon relay posts to #cao-axon. The slash command /fire-axon-hermes is the name configured in the Slack app and stays until the app is changed.",
   "workspace": {
     "teamId": "T0CDTE2JR0B",
     "domain": "northsidevent-jtb2955.slack.com"
@@ -14,6 +14,7 @@
   "caos": [
     {
       "key": "muse",
+      "harnessIdentity": "muse",
       "displayName": "Muse CAO",
       "appId": "A0CEU4GCVPS",
       "botUserId": "U0CDXQM4FUN",
@@ -28,6 +29,7 @@
     },
     {
       "key": "claude",
+      "harnessIdentity": "claude_code",
       "displayName": "Claude CAO",
       "appId": "A0CDTGZHW2X",
       "botUserId": "U0CDJCQ3K3R",
@@ -42,6 +44,7 @@
     },
     {
       "key": "gemini",
+      "harnessIdentity": "gemini_antigravity",
       "displayName": "Gemini CAO",
       "appId": "A0CDZJJF2FL",
       "botUserId": "U0CDJCXHW0P",
@@ -55,29 +58,25 @@
       "runLinkForm": "mini session name + Slack thread"
     },
     {
-      "key": "axon-hermes",
-      "displayName": "AXON-Hermes CAO",
+      "key": "axon",
+      "harnessIdentity": "hermes",
+      "displayName": "AXON CAO",
       "appId": "A0CDXR7766A",
       "botUserId": "U0CDXRAETNJ",
       "adapter": "manual",
-      "agentName": "AXON-Hermes CAO",
+      "agentName": "AXON CAO",
       "channelId": "C0CKTLCH49X",
       "channelName": "cao-axon",
       "command": "/fire-axon-hermes",
       "healthPort": 9104,
-      "home": "the AXON-Hermes chat",
-      "runLinkForm": "AXON-Hermes chat link"
+      "home": "the AXON CAO chat in Hermes",
+      "runLinkForm": "AXON CAO chat link"
     }
   ],
+  "capsComment": "Cost REPORTING numbers only. There are no start caps (daily, monthly, per-CAO weekly): a relay never refuses to start for count or cost. A cost limit is the Token Accountant's job, reported to the CAO.",
   "caps": {
-    "$comment": "Phase 0 fallback numbers (RUNBOOK Phase 0). The lower binds.",
     "perFireTokenBudget": 25000,
     "monthlyTokenCeiling": 600000,
-    "weeklyStartFloor": 5,
-    "dailyStartCapTotal": 1,
-    "monthlyStartCapTotal": 24,
-    "perCaoWeeklyManualCap": 10,
-    "manualMinutesPerStart": 15,
-    "dailyManualMinutesCeiling": 60
+    "weeklyStartFloor": 5
   }
 }

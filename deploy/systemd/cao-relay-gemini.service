@@ -2,19 +2,18 @@
 # Slack CAO Loop relay — Gemini CAO. One of four separate services (PLAN-v7 D6):
 # shared code, separate process, separate service user, separate keys, queue and journal.
 #
-# Keys (D7): ExecStartPre runs /usr/local/bin/cao-relay-fetch-keys gemini as root on EVERY
-# start; it fetches fresh from the Secure Vault into tmpfs /run/credentials/cao-relay-gemini/
-# (dir 0500, files 0400, owner cao-relay-gemini) and the process reads them from there
-# (CAO_RELAY_KEY_DIR). Files:
-#   slack-app-token  (Socket Mode app-level token)
-#   slack-bot-token  (bot token)
+# Keys: the Slack bot and app tokens come only from the doorman. The relay reads ITS OWN
+# identity token from the systemd credential `doorman-identity` (LoadCredential below) and asks the
+# doorman for CAO_RELAY_GEMINI_BOT_TOKEN and CAO_RELAY_GEMINI_APP_TOKEN (job cao-relay). ExecStartPre
+# cao-relay-fetch-keys gemini writes only the NI Brain key (brain-key) and the read-only vault deploy
+# key to tmpfs /run/credentials/cao-relay-gemini/ (CAO_RELAY_KEY_DIR).
 # No key value ever appears in this file.
 
 [Unit]
 Description=Slack CAO Loop relay — Gemini CAO
 Documentation=file:///opt/cao-relay/docs/RELAY-RUNBOOK.md
-After=network-online.target cao-relay-muse.service
-Wants=network-online.target cao-relay-muse.service
+After=network-online.target
+Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -30,6 +29,7 @@ Environment=CAO_RELAY_RUN_DIR=/run/cao-relay
 Environment=CAO_RELAY_HOLDER=vm
 # Each program reads back close-out logs from its own vault checkout (git fetch, read-only use).
 Environment=CAO_RELAY_VAULT_DIR=/var/lib/cao-relay/gemini/vault
+LoadCredential=doorman-identity:/etc/credstore/doorman-identity-gemini_antigravity
 ExecStartPre=+/usr/local/bin/cao-relay-fetch-keys gemini
 ExecStart=/usr/bin/node /opt/cao-relay/dist/index.js run
 ExecStopPost=+/usr/local/bin/cao-relay-fetch-keys --wipe gemini
@@ -41,8 +41,7 @@ RestartPreventExitStatus=78
 
 StateDirectory=cao-relay/gemini
 StateDirectoryMode=0700
-# /run/cao-relay/<cao> (control socket) and /run/cao-relay/broker come from
-# /etc/tmpfiles.d/cao-relay.conf so the broker and admin groups can reach them.
+# /run/cao-relay/<cao> (control socket) comes from /etc/tmpfiles.d/cao-relay.conf so the admin group can reach it.
 UMask=0077
 
 # Isolation envelope (D6): MemoryMax=128M, CPUQuota=25%. The program's own watchdog

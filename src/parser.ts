@@ -95,9 +95,9 @@ export function parseStart(ev: SlackEvent, me: CaoEntry, registry: Registry): Pa
   return validateTask(m[1] ?? '');
 }
 
-/** "abort: <fire id>" (D4). Returns the quoted id, or null. Accepts a full id or a unique prefix of ≥8 hex chars. */
+/** "abort: <fire id>" (D4). Returns the quoted id, or null. Accepts a full id or a unique prefix of ≥8 characters (`relay-…` or a hex id). */
 export function parseAbort(text: string): string | null {
   const cleaned = stripCodeAndQuotes(text).trim();
-  const m = /^abort:\s*([0-9a-f][0-9a-f-]{7,35})\s*$/i.exec(cleaned);
+  const m = /^abort:\s*((?:relay|p)-[0-9a-f-]{3,40}|[0-9a-f][0-9a-f-]{7,35})\s*$/i.exec(cleaned);
   return m?.[1]?.toLowerCase() ?? null;
 }

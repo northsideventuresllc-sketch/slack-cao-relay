@@ -4,11 +4,10 @@
 //   30 minutes (detection); the alert fires at 45 minutes (3 missed writes).
 // - Failover is detected when the VM's Muse health endpoint does not answer for
 //   3 consecutive 1-minute polls AND the heartbeat is older than 30 minutes.
-//   On failover with Muse CAO offline, the poller itself sends the agent_comms
-//   row to Claude CAO (its registry agent name).
-// - Alert transport: an agent_comms row addressed to Claude CAO (registry agentName); if the brain is
-//   down, the local file /var/lib/cao-relay/mini/alerts.jsonl (read by Claude CAO
-//   at the next morning check-in).
+//   On failover with Muse CAO offline, the poller itself writes the
+//   alert for Claude CAO.
+// - Alert transport: the local file /var/lib/cao-relay/mini/alerts.jsonl (read by Claude CAO
+//   at the next morning check-in). No brain row: the old comms table is retired.
 // - Dead-owner fallback (D5 §6): while the Muse relay program is down, the
 //   poller runs the close-out sweep every 6 hours with the REDUCED test
 //   (prongs (b)+(c) only — prong (a) skipped; R7-NEW-4).
@@ -22,6 +21,7 @@ import { WebClient, LogLevel } from '@slack/web-api';
 import { DirectBrain, type BrainApi } from './brain.js';
 import { caoEntry, loadRegistry, type Registry } from './config.js';
 import { withLegacyEnv } from './legacy.js';
+import { assertBotTokenShape } from './slackguard.js';
 import { MuseDuties, POLLER_AGENT } from './sweep.js';
 import type { Poster } from './poster.js';
 import { appendLineCapped, writeFileAtomicSync } from './util/durable.js';
@@ -109,16 +109,15 @@ export async function runPoller(rawEnv: NodeJS.ProcessEnv = process.env): Promis
   // and shown to Claude CAO at its 9am check-in (`cao-relay checkin-report`).
   await brain.upsertHeartbeat(POLLER_AGENT, new Date(now).toISOString()).catch(() => undefined);
 
+  // No alert row in the brain (the old comms table is retired): the alert goes to the mini's alerts file, which Claude CAO's
+  // 9am check-in report reads (`cao-relay checkin-report`).
   const send = async (subject: string, body: Record<string, unknown>): Promise<void> => {
-    try {
-      await brain.insertAlertRow(ALERT_TO, FROM, subject, JSON.stringify(body));
-    } catch {
-      appendLineCapped(alertsPath, JSON.stringify({ at: new Date(now).toISOString(), subject, ...body }));
-    }
+    appendLineCapped(alertsPath, JSON.stringify({ at: new Date(now).toISOString(), to: ALERT_TO, from: FROM, subject, ...body }));
   };
   if (d.alertHeartbeat) await send('Muse CAO heartbeat is older than 45 minutes', { heartbeatAgeMs: hbAge, health });
   if (d.failover) await send('cao-relay failover: VM Muse relay down 3 polls and Muse CAO offline. Run cao-relay-mini-sync.sh (checked step) then start the mini relays.', { heartbeatAgeMs: hbAge, health });
   if (d.runSweep && secrets.slackBotToken) {
+    assertBotTokenShape(secrets.slackBotToken); // bot-token-only: a user token is refused here too
     const web = new WebClient(secrets.slackBotToken, { logLevel: LogLevel.ERROR, retryConfig: { retries: 0 } });
     const history = {
       history: async (channel: string, oldest: string) =>

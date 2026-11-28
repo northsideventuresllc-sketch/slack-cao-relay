@@ -29,7 +29,7 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 sumfile="$work/$day.sha256"
 fail=0
 step_fail() { fail=1; alert "$1"; echo "offhost: $1" >&2; }
-for c in muse claude gemini axon-hermes; do
+for c in muse claude gemini axon; do
   src="/var/lib/cao-relay/$c"
   # C2-FU-10: all four programs are deployed, so a missing state dir is a fault, not a skip.
   if [ ! -d "$src" ]; then step_fail "offhost-state-dir-missing-$c"; continue; fi

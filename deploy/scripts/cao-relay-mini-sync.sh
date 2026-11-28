@@ -28,7 +28,7 @@ alert() { # capped (R7-NEW-5): rotate past 1 MiB by rename, keep 3; read by Clau
 
 if [ "$mode" = "--retire-old" ]; then
   # Idempotent. Leaves the old macOS users and /var/lib/cto-relay data in place (state is moved, not deleted).
-  for c in muse claude gemini axon-hermes; do
+  for c in muse claude gemini axon; do
     old="/Library/LaunchDaemons/com.northside.cto-relay.$c.plist"
     sudo launchctl bootout "system/com.northside.cto-relay.$c" 2>/dev/null || true
     [ -e "$old" ] && sudo rm -f "$old" && echo "removed $old"
@@ -58,7 +58,7 @@ if [ "$mini_commit" != "$exp_commit" ] || [ "$mini_hash" != "$exp_hash" ]; then
 fi
 
 # The off-host journal copies must be present for each CAO (takeover reads them).
-for c in muse claude gemini axon-hermes; do
+for c in muse claude gemini axon; do
   d="/var/lib/cao-relay/$c"
   if [ -f "$d/journal.jsonl.sha256" ]; then
     ( cd "$d" && { sha256sum -c journal.jsonl.sha256 >/dev/null 2>&1 || shasum -a 256 -c journal.jsonl.sha256 >/dev/null; } ) || { alert offhost-copy-checksum-bad "$c"; exit 1; }
@@ -69,7 +69,7 @@ done
 
 echo "PROCEED: mini at expected commit $mini_commit, config hash $mini_hash"
 if [ "$mode" = "--start" ]; then
-  for c in muse claude gemini axon-hermes; do
+  for c in muse claude gemini axon; do
     sudo launchctl bootstrap system "/Library/LaunchDaemons/com.northside.cao-relay.$c.plist" 2>/dev/null || sudo launchctl kickstart -k "system/com.northside.cao-relay.$c"
   done
   echo "Mini relays started. Each acquires its lease with epoch+1 once the VM lease has expired (90 s)."

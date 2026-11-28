@@ -1,5 +1,5 @@
 // Health endpoint (D6): bound to localhost AND the VM LAN address, on the
-// per-CAO port (Muse 9101, Claude 9102, Gemini 9103, AXON-Hermes 9104). Only
+// per-CAO port (Muse 9101, Claude 9102, Gemini 9103, AXON CAO 9104). Only
 // this machine and the mini can open it. Answers with latency numbers, queue
 // depth, brain lease state, and adapter health.
 
