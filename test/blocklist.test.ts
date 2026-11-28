@@ -30,7 +30,7 @@ test('post-queue strip removes mention + fire: + task words (plain names and rea
   assert.ok(!containsStartPattern(stripStartPattern(`<@${claude.botUserId}> FIRE: x`, reg.caos), reg.caos));
 });
 
-test('plain names become real mentions (AXON-Hermes CAO wins over shorter names)', () => {
-  const ax = reg.caos.find((c) => c.key === 'axon-hermes')!;
-  assert.equal(toRealMentions('@AXON-Hermes CAO please', reg.caos), `<@${ax.botUserId}> please`);
+test('plain names become real mentions (AXON CAO wins over shorter names)', () => {
+  const ax = reg.caos.find((c) => c.key === 'axon')!;
+  assert.equal(toRealMentions('@AXON CAO please', reg.caos), `<@${ax.botUserId}> please`);
 });

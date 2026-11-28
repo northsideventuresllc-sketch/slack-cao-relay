@@ -6,8 +6,8 @@
 # and writes them to tmpfs /run/credentials/cao-relay-<cao>/ (dir 0500, files
 # 0400, owner = the service user). The fresh fetch always overwrites, so a key
 # rotated in the vault wins over a stale tmpfs copy.
-#   muse:         slack-app-token, slack-bot-token, brain-key (label cto-relay-muse), vault-read-key
-#   claude/gemini/axon-hermes: slack-app-token, slack-bot-token, vault-read-key
+#   muse|claude|gemini|axon: brain-key, vault-read-key (Slack tokens come from the doorman, not from here;
+#                 no relay reaches the brain through another)
 #   heartbeat:    brain-key only (cron cao-heartbeat)
 #   offhost:      vault-write-key only (nightly off-host copy + vault filing; owner root)
 # The hook's own vault credential is the machine token `vault-cli-machine`,
@@ -22,10 +22,10 @@ TOKEN_FILE=/etc/cao-relay/vault-token
 
 wipe=0
 if [ "${1:-}" = "--wipe" ]; then wipe=1; shift; fi
-target="${1:?usage: cao-relay-fetch-keys [--wipe] <muse|claude|gemini|axon-hermes|heartbeat|offhost>}"
+target="${1:?usage: cao-relay-fetch-keys [--wipe] <muse|claude|gemini|axon|heartbeat|offhost>}"
 
 case "$target" in
-  muse|claude|gemini|axon-hermes) user="cao-relay-$target"; dir="/run/credentials/cao-relay-$target" ;;
+  muse|claude|gemini|axon) user="cao-relay-$target"; dir="/run/credentials/cao-relay-$target" ;;
   heartbeat) user="cao-relay-muse"; dir="/run/credentials/cao-heartbeat" ;;
   offhost) user="root"; dir="/run/credentials/cao-relay-offhost" ;;
   *) echo "cao-relay-fetch-keys: unknown target" >&2; exit 64 ;;
@@ -56,10 +56,9 @@ label_for() { # $1 = credential file name
 }
 
 case "$target" in
-  muse) files="slack-app-token slack-bot-token brain-key vault-read-key" ;;
   heartbeat) files="brain-key" ;;
   offhost) files="vault-write-key" ;;
-  *) files="slack-app-token slack-bot-token vault-read-key" ;;
+  *) files="brain-key vault-read-key" ;;
 esac
 
 tmp="$dir.new.$$"

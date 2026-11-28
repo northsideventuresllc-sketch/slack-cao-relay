@@ -4,7 +4,7 @@
 #
 #   cao-relay-mini-sync.sh            verify only: prints PROCEED or ABORT
 #   cao-relay-mini-sync.sh --start    verify, then start the four mini relays
-#   cao-relay-mini-sync.sh --retire-old  stop + remove the old com.northside.cto-relay.* launchd units (CTO -> CAO cutover)
+#   cao-relay-mini-sync.sh --retire-old  stop + remove the old com.northside.cto-relay.* and axon-hermes launchd units (CTO -> CAO cutover)
 #   cao-relay-mini-sync.sh --nightly  nightly pull (fast-forward to origin/main) + verify, no start
 #
 # Verification: the mini's repo commit + config hash must equal the expected
@@ -28,11 +28,18 @@ alert() { # capped (R7-NEW-5): rotate past 1 MiB by rename, keep 3; read by Clau
 
 if [ "$mode" = "--retire-old" ]; then
   # Idempotent. Leaves the old macOS users and /var/lib/cto-relay data in place (state is moved, not deleted).
-  for c in muse claude gemini axon-hermes; do
+  for c in muse claude gemini axon; do
     old="/Library/LaunchDaemons/com.northside.cto-relay.$c.plist"
     sudo launchctl bootout "system/com.northside.cto-relay.$c" 2>/dev/null || true
     [ -e "$old" ] && sudo rm -f "$old" && echo "removed $old"
   done
+  # The AXON relay used to be `axon-hermes`: an old process would fence on lease name axon-hermes and could post next to `axon`.
+  for label in com.northside.cto-relay.axon-hermes com.northside.cao-relay.axon-hermes; do
+    sudo launchctl bootout "system/$label" 2>/dev/null || true
+    [ -e "/Library/LaunchDaemons/$label.plist" ] && sudo rm -f "/Library/LaunchDaemons/$label.plist" && echo "removed /Library/LaunchDaemons/$label.plist"
+  done
+  [ -d /var/lib/cao-relay/axon-hermes ] && [ ! -e /var/lib/cao-relay/axon ] && sudo mv /var/lib/cao-relay/axon-hermes /var/lib/cao-relay/axon && echo "moved axon-hermes state -> axon"
+  [ -d /var/lib/cao-relay/axon-hermes ] && [ -e /var/lib/cao-relay/axon ] && echo "WARNING: both /var/lib/cao-relay/axon-hermes and /var/lib/cao-relay/axon exist; merge by hand, nothing was moved" >&2
   if [ -d /var/lib/cto-relay ] && [ ! -e /var/lib/cao-relay ]; then sudo mv /var/lib/cto-relay /var/lib/cao-relay && echo "moved /var/lib/cto-relay -> /var/lib/cao-relay"; fi
   echo "Old cto-relay launchd units retired. Install the new ones: copy deploy/launchd/com.northside.cao-relay.CAO.plist.template to /Library/LaunchDaemons/com.northside.cao-relay.<key>.plist (replace CAO_KEY)."
   exit 0
@@ -58,7 +65,7 @@ if [ "$mini_commit" != "$exp_commit" ] || [ "$mini_hash" != "$exp_hash" ]; then
 fi
 
 # The off-host journal copies must be present for each CAO (takeover reads them).
-for c in muse claude gemini axon-hermes; do
+for c in muse claude gemini axon; do
   d="/var/lib/cao-relay/$c"
   if [ -f "$d/journal.jsonl.sha256" ]; then
     ( cd "$d" && { sha256sum -c journal.jsonl.sha256 >/dev/null 2>&1 || shasum -a 256 -c journal.jsonl.sha256 >/dev/null; } ) || { alert offhost-copy-checksum-bad "$c"; exit 1; }
@@ -69,7 +76,7 @@ done
 
 echo "PROCEED: mini at expected commit $mini_commit, config hash $mini_hash"
 if [ "$mode" = "--start" ]; then
-  for c in muse claude gemini axon-hermes; do
+  for c in muse claude gemini axon; do
     sudo launchctl bootstrap system "/Library/LaunchDaemons/com.northside.cao-relay.$c.plist" 2>/dev/null || sudo launchctl kickstart -k "system/com.northside.cao-relay.$c"
   done
   echo "Mini relays started. Each acquires its lease with epoch+1 once the VM lease has expired (90 s)."

@@ -1,6 +1,6 @@
 // The per-CAO queue (D6): max 10, journal-backed. Each entry has a stable id
 // (the fire id) and an idempotency key. Order comes from the journal; content
-// (task text) stays in the brain rows — except a brain-down start, whose text
+// (task text) stays in Slack, behind the pointer's link — except a brain-down start, whose text
 // is held IN MEMORY ONLY until the brain write lands (D4 Muse adapter).
 
 import type { FireJournalState, JournalRecord } from './contracts.js';
@@ -35,6 +35,7 @@ export interface FireEntry {
   lostNotified: boolean;
   // memory only — never written to disk:
   heldTask: string | null;
+  heldFromAgent: string | null; // the requesting CAO's agent name, kept with the held text so the retry writes the right pointer
   nextBrainRetryAt: number | null;
   noticesSent: Set<string>;
 }
@@ -70,6 +71,7 @@ export class FireBook {
         lockCleared: false,
         lostNotified: false,
         heldTask: null,
+        heldFromAgent: null,
         nextBrainRetryAt: null,
         noticesSent: new Set(),
       };
@@ -88,6 +90,7 @@ export class FireBook {
           e.id = r.brainId;
           e.provisional = false;
           e.heldTask = null;
+          e.heldFromAgent = null;
           e.nextBrainRetryAt = null;
           this.byId.set(e.id, e);
         }

@@ -65,12 +65,19 @@ export interface CoreDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The event lane (relay.ts). Deferred work (the 1-hour start retry) re-enters it. */
   serialize?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** The task text of a run, fetched from Slack by the pointer's link (message text is never kept in the brain). */
+  fetchTask?: (slackLink: string) => Promise<string | null>;
   /** C2-FU-9: time from socket receipt the brain work before the short reply may take (default 2200 ms). */
   ackBudgetMs?: number;
 }
 
 /** C2-FU-9: the brain work before a short reply must finish inside this budget, so the reply lands under 3 s. */
 export const ACK_BUDGET_MS = 2200;
+
+/** A slash command has no Slack message of its own (its timestamp is made up), so it has no message ts to link to. */
+function realMessageTs(ev: SlackEvent): string | null {
+  return ev.ingress === 'slash_command' ? null : ev.timestamp || null;
+}
 /** A start held only because the brain was too slow for the ack budget is retried after 1 minute, not the hourly outage cadence. */
 export const SLOW_BRAIN_RETRY_MS = MIN;
 
@@ -93,7 +100,6 @@ export type StartOutcome =
   | 'breaker'
   | 'already-running'
   | 'queue-full'
-  | 'cap'
   | 'stale-epoch'
   | 'started'
   | 'held-brain-down'
@@ -149,7 +155,7 @@ export class RelayCore {
     const evKey = eventKey(ev, receivedAt);
     const isStartIngress = ev.ingress === 'app_mention' || ev.ingress === 'slash_command';
     for (let attempt = 1; attempt <= MAX_EVENT_FAILURES; attempt++) {
-      const ctx: StartContext = { eventKey: evKey, channelId: ev.channelId, authorId: ev.authorId, messageTs: ev.timestamp || null, receivedAt, idemAt: receivedAt, isRetry: false, reachedAdapter: false };
+      const ctx: StartContext = { eventKey: evKey, channelId: ev.channelId, authorId: ev.authorId, messageTs: realMessageTs(ev), receivedAt, idemAt: receivedAt, isRetry: false, reachedAdapter: false };
       try {
         if (isStartIngress) await this.handleStartIngress(ev, ctx);
         else await this.handleMessage(ev);
@@ -208,7 +214,7 @@ export class RelayCore {
         const held = this.pendingRetries.get(rid);
         if (!held) return;
         this.pendingRetries.delete(rid);
-        const ctx: StartContext = { eventKey: evKey, channelId: held.channelId, authorId: held.authorId, messageTs: held.timestamp || null, receivedAt: this.now(), idemAt, isRetry: true, reachedAdapter: false };
+        const ctx: StartContext = { eventKey: evKey, channelId: held.channelId, authorId: held.authorId, messageTs: realMessageTs(held), receivedAt: this.now(), idemAt, isRetry: true, reachedAdapter: false };
         try {
           await this.handleStartIngress(held, ctx);
           this.markRetryDone(rid, 'retried');
@@ -304,7 +310,7 @@ export class RelayCore {
       return 'breaker';
     }
 
-    // queue: already-running, max 10, cost caps
+    // queue: already-running, max 10. There are no start caps: a start is never refused for count or cost.
     const holder = this.d.book.lockHolder(now);
     if (holder) {
       this.d.runlog.check(ctx.eventKey, 'queue', 'already-running');
@@ -316,25 +322,12 @@ export class RelayCore {
       await this.replyTimed(ctx.channelId, T.queueFull(), ctx.receivedAt, null);
       return 'queue-full';
     }
-    // C2-FU-9: the cap counts and the live lease read run CONCURRENTLY, inside the ack budget.
+    // C2-FU-9: the live lease read runs inside the ack budget.
     const deadline = ctx.receivedAt + (this.d.ackBudgetMs ?? ACK_BUDGET_MS);
     const left = (): number => Math.max(50, deadline - this.now());
     let brainUp = true;
     let slow = false;
-    const [capR, leaseR] = await Promise.allSettled([
-      withTimeout(this.d.caps.check(this.d.brain, now), left()),
-      withTimeout(this.d.lease.verifyLive(), left()),
-    ]);
-    if (capR.status === 'fulfilled') {
-      if (capR.value.kind === 'refused') {
-        this.d.runlog.check(ctx.eventKey, 'queue', `cap-${capR.value.cap}`);
-        await this.replyTimed(ctx.channelId, capR.value.reply, ctx.receivedAt, null);
-        return 'cap';
-      }
-    } else {
-      brainUp = false; // counts unavailable (down, or too slow for the ack budget); re-checked before the deferred brain write
-      slow ||= capR.reason instanceof AdapterTimeout;
-    }
+    const [leaseR] = await Promise.allSettled([withTimeout(this.d.lease.verifyLive(), left())]);
     this.d.runlog.check(ctx.eventKey, 'queue', 'ok');
 
     const taskHash = sha256(task);
@@ -440,6 +433,7 @@ export class RelayCore {
     const e = this.d.book.get(provisionalId);
     if (e) {
       e.heldTask = task;
+      e.heldFromAgent = this.agentByBotId.get(ctx.authorId) ?? null;
       e.nextBrainRetryAt = this.now() + (slow ? SLOW_BRAIN_RETRY_MS : BRAIN_RETRY_MS);
     }
     this.d.dedup.accept(idemKey, normHash, provisionalId, this.now());
@@ -471,13 +465,6 @@ export class RelayCore {
     e.nextBrainRetryAt = now + BRAIN_RETRY_MS;
     const task = e.heldTask;
     try {
-      const cap = await this.d.caps.check(this.d.brain, now);
-      if (cap.kind === 'refused') {
-        e.heldTask = null;
-        this.stateRecord(e.id, 'refused', { reason: `cap-${cap.cap}` });
-        await this.d.poster.post(e.channelId, cap.reply, 'template', e.id);
-        return;
-      }
       if (!(await this.d.lease.verifyLive())) return;
       // A write that timed out may have landed: adopt it instead of writing twice.
       const found = await this.d.brain.findFireRowByIdem(this.d.cao.agentName, e.idemKey);
@@ -488,7 +475,7 @@ export class RelayCore {
           await this.d.adapter.fire({
             task,
             epoch: this.d.lease.currentEpoch(),
-            meta: { taskHash: e.taskHash, normHash: e.normHash, idemKey: e.idemKey, fromAgent: 'CAO-RELAY', channelId: e.channelId, messageTs: null, permalink: null },
+            meta: { taskHash: e.taskHash, normHash: e.normHash, idemKey: e.idemKey, fromAgent: e.heldFromAgent ?? 'CAO-RELAY', channelId: e.channelId, messageTs: null, permalink: null },
           })
         ).runId;
       const provisionalId = e.id;
@@ -638,7 +625,7 @@ export class RelayCore {
     return { ok: true, reason: 'stopped' };
   }
 
-  /** Muse CAO's Monday review clears an overrun block. */
+  /** Muse CAO's Monday review clears the overrun flag. */
   reviewClear(): void {
     this.record({ kind: 'fire-state', fireId: 'review', hash: '', state: 'review-cleared' });
   }

@@ -1,4 +1,4 @@
-// HarnessAdapter v1 implementations. Both write the brain row (agent_comms) as
+// HarnessAdapter v1 implementations. Both write the brain row (the old comms table) as
 // the start record: for Muse it is the start request the mailbox drain picks
 // up; for the manual CAOs it is the live handoff record (D4 manual state
 // machine). The run id is the brain-row id, which is also the fire id quoted
@@ -50,8 +50,6 @@ abstract class BrainHandoffAdapter implements HarnessAdapter {
       toAgent: this.cao.agentName,
       fromAgent: meta.fromAgent,
       toHarness: this.cao.key,
-      subject: `Start for ${this.cao.displayName}`,
-      body: req.task,
       evidence,
       firedAt: now,
     });
@@ -107,14 +105,13 @@ export class MuseAdapter extends BrainHandoffAdapter {
   }
 }
 
-/** Claude / Gemini / AXON-Hermes CAO — manual in v1. Muse CAO starts the run by hand. */
+/** Claude / Gemini / AXON CAO — manual in v1. Muse CAO starts the run by hand. */
 export class ManualAdapter extends BrainHandoffAdapter {
   protected readonly startStatus: FireStatus = 'queued-for-person';
 
   /**
-   * Reachable = the Muse program is up (the broker answers — manual programs
-   * reach the brain only through it) and the pending manual queue is under its
-   * cap of 10 waiting starts; detail = queue depth + last claim time.
+   * Reachable = this relay's own brain answers (no other program is involved) and the pending
+   * manual queue is under its limit of 10 waiting starts; detail = queue depth + last claim time.
    */
   async health(): Promise<AdapterHealth> {
     try {
@@ -125,7 +122,7 @@ export class ManualAdapter extends BrainHandoffAdapter {
         detail: `queue depth ${depth}/${MANUAL_QUEUE_CAP}; last claim ${lastClaim ?? 'none yet'}`,
       };
     } catch {
-      return { reachable: false, detail: 'Muse program (brain broker) not answering' };
+      return { reachable: false, detail: 'brain not answering' };
     }
   }
 }

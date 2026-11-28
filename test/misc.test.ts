@@ -8,8 +8,7 @@ import { decide } from '../src/poller.js';
 import { Journal } from '../src/journal.js';
 import { PostQueueWatcher, appendPostQueue, type PostQueueEntry } from '../src/postqueue.js';
 import { countWords, isRelayTemplate, T } from '../src/templates.js';
-import { effectiveDailyCap, placeholdersBlocking, loadRegistry } from '../src/config.js';
-import { BrokerServer, BrokeredBrain, brokerSocketPath } from '../src/broker.js';
+import { placeholdersBlocking, loadRegistry } from '../src/config.js';
 import { silentLogger } from '../src/util/log.js';
 import { Maintenance } from '../src/maintenance.js';
 import { DAY, HOUR, MIN } from '../src/util/time.js';
@@ -117,7 +116,7 @@ test('templates: Appendix A word rule (a standalone em dash is not a word); rela
   assert.ok(!isRelayTemplate('Done with the review, @Muse CAO please check'.replace('Done with', 'Finished')));
 });
 
-test('config: placeholders block start; effective daily cap is the lower of the daily cap and the manual-minutes ceiling', () => {
+test('config: placeholders block start', () => {
   const r = loadRegistry();
   // Channel ids are filled from the live workspace (2026-11-25): the shipped registry has no placeholder left.
   assert.equal(placeholdersBlocking(r, 'muse').length, 0);
@@ -127,39 +126,6 @@ test('config: placeholders block start; effective daily cap is the lower of the 
   assert.ok(!placeholdersBlocking(unset, 'gemini').includes('gemini.agentName'), 'agent names set by COUNCIL GATE round 1');
   assert.ok(placeholdersBlocking(unset, 'gemini').includes('gemini.channelId'));
   assert.equal(placeholdersBlocking(testRegistry(), 'muse').length, 0);
-  assert.equal(effectiveDailyCap(r.caps), 1);
-});
-
-test('caps: the daily total across all four CAOs is a hard stop on count', async () => {
-  const h = await makeHarness('claude');
-  (h.core.d.caps as unknown as { caps: { dailyStartCapTotal: number } }).caps.dailyStartCapTotal = 1;
-  await h.core.handleEvent(mention(h, 'claude', 'fire: one'));
-  h.brain.rows.get(h.brain.insertOrder[0]!)!.status = 'closed'; // finished: frees the lock, still counts
-  await new Maintenance(h.core).pollRows();
-  await h.advance(MIN);
-  await h.core.handleEvent(mention(h, 'claude', 'fire: two'));
-  assert.match(h.sender.texts().at(-1)!, /daily start limit/);
-});
-
-test('broker: a manual program reaches only its own rows and its own lease name', async () => {
-  const clock = new FakeClock();
-  const brain = new FakeBrain(clock);
-  const reg = testRegistry();
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
-  const server = new BrokerServer(brain, runDir, silentLogger);
-  server.start(reg.caos.filter((c) => c.adapter === 'manual'));
-  await new Promise((r) => setTimeout(r, 50));
-  const claude = new BrokeredBrain(brokerSocketPath(runDir, 'claude'));
-  await claude.ping();
-  const ev = { v: 0, cao: 'claude', task_hash: 'h', norm_hash: 'n', epoch: 1 };
-  const row = await claude.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', evidence: ev, firedAt: new Date().toISOString() });
-  assert.equal((await claude.getFireRow(row.id))?.id, row.id);
-  await assert.rejects(claude.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'b', evidence: { ...ev, cao: 'muse' }, firedAt: '' }));
-  await assert.rejects(claude.getLease('muse'));
-  const gemini = new BrokeredBrain(brokerSocketPath(runDir, 'gemini'));
-  assert.equal(await gemini.getFireRow(row.id), null, 'another CAO cannot read the row');
-  await assert.rejects(claude.upsertHeartbeat());
-  server.stop();
 });
 
 test('brain rows: terminal rows older than 90 days are exported to the vault archive and marked, once', async () => {
@@ -167,7 +133,7 @@ test('brain rows: terminal rows older than 90 days are exported to the vault arc
   const clock = new FakeClock();
   const brain = new FakeBrain(clock);
   const reg = testRegistry();
-  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 'task text', evidence: { v: 0, cao: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
+  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', evidence: { v: 0, cao: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
   brain.rows.get(row.id)!.status = 'closed';
   brain.rows.get(row.id)!.completed_at = new Date(clock.now()).toISOString();
   clock.advance(91 * DAY);

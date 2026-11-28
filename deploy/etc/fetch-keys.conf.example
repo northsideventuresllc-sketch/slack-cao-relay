@@ -12,15 +12,13 @@ VAULT_GET="<VAULT_GET_COMMAND>"
 # Secure Vault labels (C2-FU-4). These are the labels each key is STORED UNDER
 # (runbook §2.4 says where each value comes from in Slack). The brain key label
 # Labels keep their original cto-relay-* names on purpose: they name live secrets in the safe; renaming a secret follows rules 20.8 and is a separate JB-approved change.
+# Each relay fetches the NI Brain service key itself (no relay reaches the brain through another).
+# The Slack bot and app tokens are NOT listed here: they come only from the doorman (src/doorman.ts).
+# The existing cto-relay-* keychain items stay where they are (rules 20.8).
 LABEL_MUSE_BRAIN_KEY="cto-relay-muse"
-LABEL_MUSE_SLACK_APP_TOKEN="cto-relay-muse-slack-app"
-LABEL_MUSE_SLACK_BOT_TOKEN="cto-relay-muse-slack-bot"
-LABEL_CLAUDE_SLACK_APP_TOKEN="cto-relay-claude-slack-app"
-LABEL_CLAUDE_SLACK_BOT_TOKEN="cto-relay-claude-slack-bot"
-LABEL_GEMINI_SLACK_APP_TOKEN="cto-relay-gemini-slack-app"
-LABEL_GEMINI_SLACK_BOT_TOKEN="cto-relay-gemini-slack-bot"
-LABEL_AXON_HERMES_SLACK_APP_TOKEN="cto-relay-axon-hermes-slack-app"
-LABEL_AXON_HERMES_SLACK_BOT_TOKEN="cto-relay-axon-hermes-slack-bot"
+LABEL_CLAUDE_BRAIN_KEY="cto-relay-muse"
+LABEL_GEMINI_BRAIN_KEY="cto-relay-muse"
+LABEL_AXON_BRAIN_KEY="cto-relay-muse"
 # Vault repo deploy keys (C2-FU-2, C2-FU-3): one read-only key for close-out
 # read-back (all four programs), one write key for the nightly vault filing.
 LABEL_VAULT_READ_KEY="cto-relay-vault-read"

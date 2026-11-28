@@ -11,13 +11,13 @@
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 src="$(cd "$(dirname "$0")/../.." && pwd)"
-CAOS="muse claude gemini axon-hermes"
+CAOS="muse claude gemini axon"
 
 # --- Retire the pre-rename cto-relay install (CTO -> CAO cutover; see docs/CAO-CUTOVER.md) -----
 # Idempotent: does nothing when no cto-relay unit/dir exists. Stops and disables the old units,
 # removes them and the old command wrappers, and moves the old state dirs to the new names so
 # journals, queues and checkpoints carry over. Old system users are left in place (no data loss);
-# remove them by hand after the cutover is verified: userdel cto-relay-<name>.
+# remove them by hand after the cutover is verified: userdel cto-relay-<name> (and cao-relay-axon-hermes if it was ever created).
 old_units="cto-heartbeat.timer cto-heartbeat.service cto-relay-offhost-copy.timer cto-relay-offhost-copy.service cto-relay-muse cto-relay-claude cto-relay-gemini cto-relay-axon-hermes"
 for u in $old_units; do
   if systemctl list-unit-files "$u*" 2>/dev/null | grep -q "^$u"; then
@@ -33,7 +33,16 @@ for f in /etc/systemd/system/cto-heartbeat.service /etc/systemd/system/cto-heart
   [ -e "$f" ] && rm -f "$f" && echo "removed old $f"
 done
 systemctl daemon-reload
+# The AXON relay is named `axon` (it was `axon-hermes`): stop the old unit, retire its files, carry its state over.
+systemctl disable --now cao-relay-axon-hermes 2>/dev/null || true
+systemctl reset-failed cao-relay-axon-hermes cto-relay-axon-hermes 2>/dev/null || true
+rm -f /etc/systemd/system/cao-relay-axon-hermes.service
 if [ -d /var/lib/cto-relay ] && [ ! -e /var/lib/cao-relay ]; then mv /var/lib/cto-relay /var/lib/cao-relay && echo "moved /var/lib/cto-relay -> /var/lib/cao-relay"; fi
+# Order matters: the cto-relay dir moves FIRST, so a VM still on cto-relay carries axon-hermes along; only then axon-hermes becomes axon.
+if [ -d /var/lib/cao-relay/axon-hermes ] && [ -e /var/lib/cao-relay/axon ]; then
+  echo "WARNING: both /var/lib/cao-relay/axon-hermes and /var/lib/cao-relay/axon exist; AXON's journal and queue may be in axon-hermes. Merge by hand (stop cao-relay-axon first); nothing was moved." >&2
+fi
+if [ -d /var/lib/cao-relay/axon-hermes ] && [ ! -e /var/lib/cao-relay/axon ]; then mv /var/lib/cao-relay/axon-hermes /var/lib/cao-relay/axon && echo "moved axon-hermes state -> axon"; fi
 if [ -d /etc/cto-relay ] && [ ! -e /etc/cao-relay ]; then mv /etc/cto-relay /etc/cao-relay && echo "moved /etc/cto-relay -> /etc/cao-relay (edit CTO_RELAY_* to CAO_RELAY_* in relay.env; old names still work)"; fi
 if [ -d /opt/cto-relay ]; then rm -rf /opt/cto-relay && echo "removed /opt/cto-relay"; fi
 # ---------------------------------------------------------------------------------------------
@@ -48,9 +57,8 @@ done
 for c in $CAOS; do
   [ -d "/var/lib/cao-relay/$c" ] && chown -R "cao-relay-$c:cao-relay-$c" "/var/lib/cao-relay/$c"
 done
-# Muse must be able to hand each broker socket to that CAO's group.
-usermod -a -G cao-relay-admin,cao-relay-claude,cao-relay-gemini,cao-relay-axon-hermes cao-relay-muse
-for c in claude gemini axon-hermes; do usermod -a -G cao-relay-admin "cao-relay-$c"; done
+# Every relay is independent (no broker, no Muse-held key): each service user reaches only the admin socket group.
+for c in muse claude gemini axon; do usermod -a -G cao-relay-admin "cao-relay-$c"; done
 
 install -d -m 0755 /etc/cao-relay
 if [ "${1:-}" = "--vault-token-stdin" ]; then
@@ -68,6 +76,17 @@ fi
 placeholder_files="/etc/cao-relay/relay.env /etc/cao-relay/fetch-keys.conf /etc/cao-relay/offhost.env $src/config/registry.json $src/deploy/sudoers/cao-relay"
 if grep -n -E '<[A-Za-z][A-Za-z0-9_-]*>' $placeholder_files; then
   echo "WARNING: the lines above still hold <PLACEHOLDER> values — fill them before starting (runbook §2). The services refuse to start while they remain." >&2
+fi
+
+# Doorman identity tokens (runbook §2.4): one root-only file per relay, loaded by each unit with LoadCredential=. A missing file
+# makes that unit fail to start, so say so now. deploy.sh never creates them: the values are JB's.
+for f in doorman-identity-muse doorman-identity-claude_code doorman-identity-gemini_antigravity doorman-identity-hermes; do
+  p="/etc/credstore/$f"
+  if [ ! -f "$p" ]; then echo "WARNING: $p is missing; the relay that loads it will not start (runbook §2.4: root:root, mode 0400)." >&2
+  elif [ "$(stat -c %a "$p")" != "400" ] || [ "$(stat -c %U "$p")" != "root" ]; then echo "WARNING: $p must be owned by root with mode 0400." >&2; fi
+done
+if ! grep -qE '^(CAO_RELAY_DOORMAN_URL|NVG_DOORMAN_URL)=[^<]' /etc/cao-relay/relay.env || ! grep -qE '^SUPABASE_PUBLISHABLE_KEY=[^<]' /etc/cao-relay/relay.env; then
+  echo "WARNING: /etc/cao-relay/relay.env has no real CAO_RELAY_DOORMAN_URL or SUPABASE_PUBLISHABLE_KEY; every relay exits 78 without them (runbook §2.2)." >&2
 fi
 
 # Code
@@ -94,4 +113,4 @@ echo
 echo "Installed commit $commit, config hash $chash."
 echo "Update the vault file cao-relay-expected.json to:"
 printf '{ "commit": "%s", "configHash": "%s", "deployedAt": "%s" }\n' "$commit" "$chash" "$(date -u +%FT%TZ)"
-echo "Then: systemctl enable --now cao-heartbeat.timer cao-relay-offhost-copy.timer cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon-hermes"
+echo "Then: systemctl enable --now cao-heartbeat.timer cao-relay-offhost-copy.timer cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon"

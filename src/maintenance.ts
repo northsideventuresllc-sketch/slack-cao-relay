@@ -54,6 +54,16 @@ export class Maintenance {
     return this.core.d;
   }
 
+  /** The task text of a run, read from Slack by the pointer's link. Null when Slack no longer has it (or it never had one). */
+  private async taskText(row: FireRow | null): Promise<string | null> {
+    if (!row?.slack_link || !this.d.fetchTask) return null;
+    try {
+      return await this.d.fetchTask(row.slack_link);
+    } catch {
+      return null;
+    }
+  }
+
   /** Startup restore (also the failover takeover path). */
   async restore(): Promise<void> {
     const d = this.d;
@@ -64,9 +74,10 @@ export class Maintenance {
       if (e.provisional) continue; // held text was in memory only — the reconciler reports the loss
       const row = rowById.get(e.id) ?? (await d.brain.getFireRow(e.id));
       if (!row) continue;
-      // 4: re-post a failed short reply from the brain row's task text.
-      if (!e.replyPosted && row.body) {
-        const safe = d.poster.safeTask(row.body);
+      // 4: re-post a failed short reply, with the task text read back from Slack by the pointer's link.
+      const taskText = e.replyPosted ? null : await this.taskText(row);
+      if (!e.replyPosted && taskText) {
+        const safe = d.poster.safeTask(taskText);
         const text = d.cao.adapter === 'automatic-muse' ? T.startedAutomatically(safe, e.id) : T.queuedForPerson(safe, e.id, d.cao);
         const r = await d.poster.post(e.channelId, text, 'template', e.id);
         if (r.ok) this.core.record({ kind: 'fire-state', fireId: e.id, hash: '', state: 'reply-posted' });
@@ -211,7 +222,7 @@ export class Maintenance {
     for (const e of d.book.inFlight()) {
       if (e.claimAt !== null) continue;
       let task = e.heldTask;
-      if (!task && !e.provisional) task = (await d.brain.getFireRow(e.id).catch(() => null))?.body ?? null;
+      if (!task && !e.provisional) task = await this.taskText(await d.brain.getFireRow(e.id).catch(() => null));
       lines.push(`${task ? d.poster.safeTask(task) : 'task text unavailable'} — fire id ${e.id}`);
       d.alert('manual-start-unclaimed-at-checkin', { fireId: e.id });
     }

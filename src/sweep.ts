@@ -1,6 +1,7 @@
 // D5 §6 — the close-out sweep, the daily 9am open, the 9am lock clear, and the
-// sibling watch. Owner: the Muse relay program (it holds the brain key and is
-// a member of all five CAO channels).
+// sibling watch. Owner: the Muse relay program (it is
+// a member of all five CAO channels). Its view of the other three relays is their pointer rows
+// (state only); each relay's own evidence stays in that relay's ledger.
 
 import { relayEvidence, type BrainApi, type FireRow, type RelayEvidence } from './brain.js';
 import { isPlaceholder, type CaoEntry, type Registry } from './config.js';
@@ -92,10 +93,11 @@ export class MuseDuties {
     private readonly alert: (code: string, ids?: Record<string, string | number | null>) => void,
     private readonly fetchHealth: (port: number) => Promise<boolean>,
     private readonly tz: string = 'America/New_York',
+    private readonly only: string | null = null, // a sibling relay runs the housekeeping duties over its own CAO only
   ) {}
 
   private caos(): CaoEntry[] {
-    return this.registry.caos.filter((c) => !isPlaceholder(c.agentName));
+    return this.registry.caos.filter((c) => !isPlaceholder(c.agentName) && (this.only === null || c.key === this.only));
   }
 
   private async lastCaoMessageAt(cao: CaoEntry): Promise<number | null> {
@@ -170,7 +172,7 @@ export class MuseDuties {
         if (!ev || ev.lock_cleared) continue;
         const progress = Date.parse(ev.last_progress_at ?? row.fired_at ?? '');
         if (!Number.isFinite(progress) || now - progress < STALL_MS) continue;
-        const next: RelayEvidence = { ...ev, v: ev.v + 1, lock_cleared: { by: 'cao-relay-muse', at: iso(now) } };
+        const next: RelayEvidence = { ...ev, v: ev.v + 1, lock_cleared: { by: `cao-relay-${this.only ?? 'muse'}`, at: iso(now) } };
         const ok = await this.brain.patchFireRow(row.id, { evidence: next }, { version: ev.v }).catch(() => null);
         if (ok) this.log.info('stalled lock cleared', { cao: cao.key, fireId: row.id });
       }
@@ -206,7 +208,7 @@ export class MuseDuties {
    * Nightly: brain rows are retained 90 days, then archived to the vault (D6
    * store table). R7-FU-12 — home and format: terminal start rows older than
    * 90 days are exported to /var/lib/cao-relay/muse/archive/brain-archive-<YYYY-MM>.jsonl
-   * (JSON lines, one full agent_comms row per line, task text in `body`) and marked
+   * (JSON lines, one run row per line; no task text, only ids, hashes, links and states) and marked
    * `archived_at`. The nightly cao-relay-offhost-copy.sh files that directory into
    * the vault at $VAULT_ARCHIVE_PATH within a day, where the retrieval test can
    * find it. Rows are NOT deleted from the brain: deletion after archive is a
@@ -303,7 +305,11 @@ export class MuseDuties {
     let tokens = 0;
     let unmetered = 0;
     for (const cao of this.caos()) {
-      const n = await this.brain.countStarts(iso(since), cao.agentName, iso(until));
+      const started = await this.brain.listFireRows(cao.agentName, ['queued', 'claimed', 'started', 'linked', 'closed', 'failed', 'expired']);
+      const n = started.filter((r) => {
+        const at = Date.parse(r.fired_at ?? '');
+        return Number.isFinite(at) && at >= since && at < until;
+      }).length;
       perCao[cao.key] = n;
       total += n;
       const closed = await this.brain.listFireRows(cao.agentName, ['closed']).catch(() => [] as FireRow[]);

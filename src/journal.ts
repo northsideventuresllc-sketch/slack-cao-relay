@@ -1,6 +1,6 @@
 // The start-request journal (D4/D6): append-only, newline-delimited JSON, one
 // record per line, fsynced on every write. Holds ids, hashes and states only —
-// never task text. It is the ORDER record; the brain row is the CONTENT record.
+// never task text. It is the ORDER record; the ledger holds the run state and Slack holds the text.
 
 import { z } from 'zod';
 import type { FireJournalState, JournalRecord } from './contracts.js';

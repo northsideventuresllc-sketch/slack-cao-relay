@@ -11,14 +11,15 @@ This runbook is written so Claude CAO can rebuild the relay alone (Phase 2 solo-
 
 | Program | systemd unit | Service user | Health port | Keys it holds |
 |---|---|---|---|---|
-| Muse CAO relay | `cao-relay-muse.service` | `cao-relay-muse` | 9101 | Muse app token, Muse bot token, brain key `cao-relay-muse` |
-| Claude CAO relay | `cao-relay-claude.service` | `cao-relay-claude` | 9102 | Claude app token, Claude bot token |
-| Gemini CAO relay | `cao-relay-gemini.service` | `cao-relay-gemini` | 9103 | Gemini app token, Gemini bot token |
-| AXON-Hermes CAO relay | `cao-relay-axon-hermes.service` | `cao-relay-axon-hermes` | 9104 | AXON-Hermes app token, AXON-Hermes bot token |
+| Muse CAO relay | `cao-relay-muse.service` | `cao-relay-muse` | 9101 | NI Brain key, identity `muse` (tokens from the doorman) |
+| Claude CAO relay | `cao-relay-claude.service` | `cao-relay-claude` | 9102 | NI Brain key, identity `claude_code` (tokens from the doorman) |
+| Gemini CAO relay | `cao-relay-gemini.service` | `cao-relay-gemini` | 9103 | NI Brain key, identity `gemini_antigravity` (tokens from the doorman) |
+| AXON CAO relay | `cao-relay-axon.service` | `cao-relay-axon` | 9104 | NI Brain key, identity `hermes` (AXON CAO runs in Hermes; tokens from the doorman) |
 
 - **Health:** each program answers `GET /health` on `127.0.0.1:<port>` and on the VM LAN address `198.19.0.2:<port>` (RUNBOOK Phase 0 close-out). Only this machine and the mini can open it.
 - **Code:** `/opt/cao-relay`. Node 22+. The command is `/usr/local/bin/cao-relay`.
 - **State:** `/var/lib/cao-relay/<cao>/` (mode 0700, durable disk). It holds:
+  - `fire-ledger.json`: this relay's own run state and evidence (ids, hashes, links and states; never message text).
   - `journal.jsonl`: the start journal. Append-only, fsynced, hashes only.
   - `run-log.jsonl`: ids and hashes only, kept 90 days.
   - `audit.jsonl`: redacted text of 80 characters or less, kept 90 days.
@@ -27,23 +28,19 @@ This runbook is written so Claude CAO can rebuild the relay alone (Phase 2 solo-
   - `alerts.jsonl`: the local copy of every alert. It is capped at 1 MiB and rotated by rename (`.1`–`.3`), never truncated.
   - `vault/`: this program's checkout of the vault.
   - Muse only: `post-queue.jsonl`, `mirror/` and `archive/`.
-- **Post-queue file layout (R7-FU-7):** v1 has exactly one post-queue file, `/var/lib/cao-relay/muse/post-queue.jsonl`. The Claude, Gemini and AXON-Hermes programs have none. Off-VM CAOs cannot write to this VM, so their words go through Muse CAO into the Muse file (D2). Their programs' `message` events feed only abort parsing.
-- **Keys:** `/run/credentials/cao-relay-<cao>/`. This is tmpfs (dir 0500, files 0400, owner = the service user). It is rewritten on every start and wiped on stop.
+- **Post-queue file layout (R7-FU-7):** v1 has exactly one post-queue file, `/var/lib/cao-relay/muse/post-queue.jsonl`. The Claude, Gemini and AXON CAO programs have none. Off-VM CAOs cannot write to this VM, so their words go through Muse CAO into the Muse file (D2). Their programs' `message` events feed only abort parsing.
+- **Keys:** `/run/credentials/cao-relay-<cao>/` holds `brain-key` and `vault-read-key` only. This is tmpfs (dir 0500, files 0400, owner = the service user). It is rewritten on every start and wiped on stop. The Slack bot and app tokens are not stored on disk: each relay asks the doorman for them at start (section 1a). The relay's own identity token is the systemd credential `doorman-identity` (`LoadCredential=doorman-identity:/etc/credstore/doorman-identity-<identity>`), on the mini the keychain item `nvg-doorman-identity` (account = the identity).
 - **Sockets:**
   - `/run/cao-relay/<cao>/control.sock` (group `cao-relay-admin`).
-  - `/run/cao-relay/broker/<cao>.sock` (group `cao-relay-<cao>`; manual CAOs only).
-- **Brain tables touched, and only these:**
-  - `agent_comms`: existing; 15 real columns, no `payload` and no `updated_at`.
-  - `cao_relay_lease` and `cao_heartbeat`: created by `supabase/migrations/0001_cto_relay_tables.sql` (historical name; renamed by `0002_cao_rename.sql`).
+- **Brain tables touched, and only these** (all in the `aos` schema, reached only through the four wrappers `aos_relay_select`, `aos_relay_upsert`, `aos_relay_update`, `aos_relay_delete` from `supabase/migrations/0004_relay_to_aos.sql`, with the service_role key):
+  - `aos.cao_relay_lease` and `aos.cao_heartbeat` (moved out of `public` by 0004).
+  - `aos.relay_pointers`: one pointer row per relayed start: `row_id` (`relay-<yyyymmddhhmmss>-<4 hex>`), `from_cao`, `to_cao`, `slack_channel`, `slack_link`, `fire_id`, `state` (`posted`, `delivered`, `answered`, `failed`). No column holds message text. The task text is read back from Slack by the link when it is needed.
 
-### Why only Muse holds the brain key — the brain broker
-D7 says the Claude, Gemini and AXON-Hermes programs fetch only their two Slack keys. But every program writes brain rows and holds a lease. So the Muse program serves one Unix socket per manual CAO. The other three make their brain calls through it. Each socket is scoped to its own CAO:
-- its own `agent_comms` rows only (by `to_agent`);
-- its own lease name only;
-- alerts to MUSE only;
-- heartbeat read-only.
-
-D4's manual `health()` rule ("reachable means the Muse program is up") follows from this. If the Muse program is down, the other three refuse to start (fail-closed) until it is back.
+### 1a. Independence: one doorman identity per relay, no Muse-first gate
+- Every relay reaches the brain itself and starts on its own. No relay reads another's heartbeat to decide whether to start, and no relay holds a key for another. If Muse is down, Claude, Gemini and AXON CAO still start, hold their own leases and post.
+- At start a relay reads its own identity token and asks the doorman once per secret: agent = the relay name, job `cao-relay`, secrets `CAO_RELAY_<NAME>_BOT_TOKEN` and `CAO_RELAY_<NAME>_APP_TOKEN`. A refusal stops only that relay (exit 78); the doorman's reason is logged, never a value.
+- Posting is bot-token-only: the bot token must be `xoxb-` and the app token `xapp-` (a `xoxp-` user token stops start-up), `auth.test` must answer with a `bot_id`, and `chat.postMessage` never carries `as_user` or `user`.
+- There are no start caps. A relay never refuses to start for count or cost. A cost limit is the Token Accountant's job, reported to the CAO. A run over the per-fire token budget is flagged at close-out for the Monday review; the next start is not blocked.
 
 ### Exit codes
 - `0`: stopped cleanly.
@@ -64,9 +61,9 @@ Fill these in. Do not guess them. Every value below either has its real value he
    - `MUSE`: verified from a live row;
    - `Claude CAO`: confirmed by JB (live rows carry it; PLAN-v7 D7 wrote `CLAUDE`);
    - `Gemini CAO`: seen in live rows;
-   - `AXON-Hermes CAO`: set by COUNCIL GATE round 1, confirmed by JB (matches the Slack bot name).
+   - `AXON CAO`: the AXON app and bot name (Hermes is the harness).
 
-   All four names are confirmed. A wrong name would fail loudly at the broker's `toAgent` match, never misroute silently.
+   All four names are confirmed.
 3. **`/etc/cao-relay/fetch-keys.conf` — `VAULT_GET`** (C2-FU-1).
    - **The interface is fixed.** One argument (the vault label). It reads the machine token from the file in `$VAULT_TOKEN_FILE` (`/etc/cao-relay/vault-token`) and prints only the value on stdout.
    - **The concrete command string is TO RECORD.** It is not in PLAN-v7, the setup RUNBOOK, or this repo, and no Secure Vault CLI exists in the workspace to check one against, so it is not guessed here.
@@ -77,14 +74,17 @@ Fill these in. Do not guess them. Every value below either has its real value he
      4. Check it by hand once: `sudo VAULT_TOKEN_FILE=/etc/cao-relay/vault-token <command> cao-relay-muse > /dev/null && echo ok`. Never print the value.
 
      The fetch hook refuses to run (exit 78) while `VAULT_GET` is a placeholder.
-4. **Slack token labels — named** (C2-FU-4). Store each token in the Secure Vault under these labels (already in `fetch-keys.conf.example`):
+4. **Doorman identity tokens and Slack tokens** (v4.0). No Slack token is stored on the host or in the Secure Vault labels for the relay: each relay asks the doorman for its own bot and app token at start (section 1a). What each host needs instead is that relay's own identity token, created by JB (the value is never in this repo and no agent reads it):
 
-   | Label | Value comes from (each app's settings page, api.slack.com/apps) |
-   |---|---|
-   | `cto-relay-<cao>-slack-app` | Basic Information → App-Level Tokens → "<App name> Socket Token" (`connections:write`) |
-   | `cto-relay-<cao>-slack-bot` | OAuth & Permissions → Bot User OAuth Token |
+   | Relay | Identity | VM file (root:root, mode 0400) | Mini keychain (the `cao-relay-<cao>` user's login keychain) |
+   |---|---|---|---|
+   | `muse` | `muse` | `/etc/credstore/doorman-identity-muse` | service `nvg-doorman-identity`, account `muse` |
+   | `claude` | `claude_code` | `/etc/credstore/doorman-identity-claude_code` | service `nvg-doorman-identity`, account `claude_code` |
+   | `gemini` | `gemini_antigravity` | `/etc/credstore/doorman-identity-gemini_antigravity` | service `nvg-doorman-identity`, account `gemini_antigravity` |
+   | `axon` | `hermes` | `/etc/credstore/doorman-identity-hermes` | service `nvg-doorman-identity`, account `hermes` |
 
-   `<cao>` is one of `muse`, `claude`, `gemini`, `axon-hermes`. The brain key label is `cto-relay-muse` (stored, Phase 1).
+   - **Create the four VM files before the first start:** `sudo install -d -m 0755 /etc/credstore`, then for each, write the value from the doorman's identity issue step (stdin, never argv) and `sudo chown root:root` and `sudo chmod 0400` the file. Each unit loads only its own file with `LoadCredential=doorman-identity:/etc/credstore/doorman-identity-<identity>`; a missing file makes that unit fail to start, and `deploy.sh` warns about any file that is missing or has the wrong owner or mode.
+   - The doorman grants each identity only its own `CAO_RELAY_<NAME>_BOT_TOKEN` and `CAO_RELAY_<NAME>_APP_TOKEN` for job `cao-relay`. A refusal stops that relay only (exit 78); a doorman that does not answer is a retry (exit 1, every 30 s).
 5. **Vault deploy keys — named** (C2-FU-2, C2-FU-3). Owner: Muse CAO. Both are created on the vault repo, GitHub → Settings → Deploy keys.
 
    | Label | Type | Used by | How it reaches the host |
@@ -97,6 +97,8 @@ Fill these in. Do not guess them. Every value below either has its real value he
    **GitHub host keys:** `deploy.sh` pins them in `/etc/cao-relay/known_hosts`. Check the printed fingerprints against GitHub's published "SSH key fingerprints" page.
 6. **`/etc/cao-relay/relay.env`:**
    - `SUPABASE_URL=<SUPABASE_URL>`: the NI Brain REST base for project `uaztknnipdxxptrmlxlb`. Read it from the Supabase dashboard → Project Settings → API.
+   - `CAO_RELAY_DOORMAN_URL=<DOORMAN_URL>` (or `NVG_DOORMAN_URL`): the doorman endpoint. Required: every relay exits 78 without it.
+   - `SUPABASE_PUBLISHABLE_KEY=<SUPABASE_PUBLISHABLE_KEY>`: the publishable (anon) key from the same API page, sent to the doorman as `Authorization: Bearer` and `apikey`. Required. It is public by design; never put the service_role key here.
    - `CAO_RELAY_VAULT_WEB_BASE` and `CAO_RELAY_VAULT_REPO_URL` are prefilled from Appendix A; verify them.
 7. **`/etc/cao-relay/offhost.env`:**
    - `VAULT_MIRROR_PATH` = `_AI/CAO Loop/Mirror` and `VAULT_ARCHIVE_PATH` = `_AI/CAO Loop/Brain Archive` (C1-FU-2). These are new folders for the loop; Muse CAO may rename them.
@@ -118,7 +120,7 @@ Write the machine token from stdin. Paste it into the prompt; never put it on th
 sudo deploy/scripts/deploy.sh --vault-token-stdin
 ```
 The deploy script does the following:
-1. Creates the users and groups: `cao-relay-{muse,claude,gemini,axon-hermes}` and `cao-relay-admin`.
+1. Creates the users and groups: `cao-relay-{muse,claude,gemini,axon}` and `cao-relay-admin`.
 2. Builds the code into `/opt/cao-relay`.
 3. Installs the four units, `cao-heartbeat.{service,timer}`, `cao-relay-offhost-copy.{service,timer}`, `/etc/tmpfiles.d/cao-relay.conf`, the fetch hook, and the sudoers rule.
 4. Prints the commit and config hash.
@@ -139,7 +141,7 @@ Then:
    sudo systemctl enable --now cao-relay-muse
    ```
    ```bash
-   sudo systemctl enable --now cao-relay-claude cao-relay-gemini cao-relay-axon-hermes
+   sudo systemctl enable --now cao-relay-claude cao-relay-gemini cao-relay-axon
    ```
 5. Check each program:
    ```bash
@@ -153,12 +155,12 @@ Then:
 
 ### Startup order inside one program (fail-closed)
 1. Config: refuse if placeholders remain.
-2. Keys from tmpfs.
-3. Brain ping. Muse calls the brain directly; the others go through the broker. No brain means refuse to start.
-4. Muse only: start the broker.
-5. Lease: acquire with epoch+1. If it is held by another live holder, refuse.
+2. Own identity token from this machine's sign-in store; Slack tokens from the doorman (a refusal stops this relay only); token shapes checked (`xoxb-` and `xapp-`).
+3. Brain ping (every relay calls the brain itself). No brain means refuse to start.
+4. Lease: acquire with epoch+1. If it is held by another live holder, refuse. No other relay's heartbeat is read.
+5. Slack `auth.test` with the bot token: it must name a `bot_id` and this CAO's bot user. A bad token fails closed for this CAO only.
 6. Journal load and queue rebuild.
-7. Slack `auth.test`. A bad token fails closed for this CAO only.
+7. (Slack client already built.)
 8. Health bind on localhost and the LAN address.
 9. Control socket.
 10. Restore and reconciler.
@@ -169,10 +171,10 @@ Then:
 
 ## 4. The four systemd service files
 
-They live in `deploy/systemd/`: `cao-relay-muse.service`, `cao-relay-claude.service`, `cao-relay-gemini.service`, `cao-relay-axon-hermes.service`. All four share one shape. They differ only in these ways:
+They live in `deploy/systemd/`: `cao-relay-muse.service`, `cao-relay-claude.service`, `cao-relay-gemini.service`, `cao-relay-axon.service`. All four share one shape. They differ only in these ways:
 - the CAO name, user and paths;
-- Muse's `SupplementaryGroups` (it hands each broker socket to that CAO's group);
-- the other three have `After=`/`Wants=cao-relay-muse.service`, because they reach the brain through Muse.
+- the doorman identity in `LoadCredential=doorman-identity:/etc/credstore/doorman-identity-<identity>` (`muse`, `claude_code`, `gemini_antigravity`, `hermes`);
+- no unit waits for another: there is no `After=`/`Wants=cao-relay-muse.service`.
 
 What every unit sets:
 - `User=`/`Group=` set to the per-CAO service user.
@@ -195,9 +197,7 @@ Labels only; never values.
 
 | File in tmpfs | Who | Vault label |
 |---|---|---|
-| `slack-app-token` | each program | `cto-relay-<cao>-slack-app` (Socket Mode, `connections:write`) |
-| `slack-bot-token` | each program | `cto-relay-<cao>-slack-bot` (10 bot scopes incl. `commands`) |
-| `brain-key` | Muse program + `cao-heartbeat` | `cao-relay-muse` |
+| `brain-key` | each program + `cao-heartbeat` (the one shared brain key) | `cto-relay-muse` |
 | `vault-read-key` | each program | `cto-relay-vault-read` (read-only vault deploy key) |
 | `vault-write-key` | the nightly off-host job only | `cto-relay-vault-write` (vault deploy key with write access) |
 
@@ -239,7 +239,7 @@ The running process reads the keys from the tmpfs files that ExecStartPre wrote 
 1. Revoke one CAO's bot token in Slack, for example Claude.
 2. Within about a minute:
    - `cao-relay-claude` exits 78 and stays down.
-   - The alert reaches Muse CAO: an `agent_comms` row to MUSE with code `cao-relay-alert`, plus `alerts.jsonl`.
+   - The alert reaches Muse CAO: the relay's own `alerts.jsonl` plus an `alert` row in its run log (no brain row).
    - After 3 failed health polls, the Muse program posts "Claude CAO relay is down. Starts for Claude CAO are paused. Muse CAO has been told." in #cao-bots. That is the visible failure.
    - The other three keep working.
 3. Restore: new token into the vault, then:
@@ -268,7 +268,7 @@ sudo -u cao-relay-muse /usr/local/bin/cao-relay post-queue-append --kind post --
 - The poster turns plain names into real mentions. It strips any mention + `fire:` + task. It blocks the whole post on any blocklist hit; the block is logged and never posted.
 - The post-queue rotates weekly or at 10 MB, by rename + create new. Rotated files are kept 7 days.
 
-### The manual state machine (Claude, Gemini, AXON-Hermes) — control commands
+### The manual state machine (Claude, Gemini, AXON CAO) — control commands
 Run as a member of `cao-relay-admin`:
 ```bash
 cao-relay admin claim   --cao claude --fire-id <FIRE_ID> --name "Muse CAO"
@@ -305,40 +305,23 @@ cao-relay admin review-clear --cao claude
 4. A hash-only journal marker (`retry-pending`, with the channel id) records that a retry is owed.
 5. If the relay restarts inside that hour, the reconciler finds the unmatched marker. It posts "A start waiting for its one retry was lost when the relay restarted. Please re-send it." in that channel.
 
-### Muse automatic — the mailbox drain contract
-The drain is outside this repo (C2-FU-6):
-- **Owner:** Muse CAO, as part of its main-chat harness (the MUSE mailbox drain).
-- **Host:** this VM, the same host as the relay and the `cao-heartbeat` cron.
-- **Schedule:** every **30 minutes** (D4). That is the Muse fire-to-start time, and the relay's 35-minute link window is sized to it.
-- **Run link form:** `https://muse.ai/chat/<run-id>`, the form PLAN-v7 D4 names. The Phase 1 record has no live check of it, so **verify it on the first Phase 5 Muse start.** The relay posts whatever URL the drain writes; it never builds the link itself.
+### Muse automatic — how a start reaches Muse CAO
+The Muse CAO harness works its starts through the control socket (`claim`, `start`, `link`, `stopped`, `closeout`), the same commands the manual CAOs use. There is no brain mailbox to drain. Everything the CAO needs to find the task is in Slack: the pointer row's `slack_link` names the message, and the relay reads the text back from Slack when it must.
+- **Run link form:** `https://muse.ai/chat/<run-id>`, the form PLAN-v7 D4 names. **Verify it on the first Muse start.** The relay posts whatever URL `link` gives it; it never builds the link itself.
+- With no link 35 minutes after the start, the relay posts a visible failure and alerts.
 
-It must follow these rules:
-- **Pick up only** `agent_comms` rows with `code = 'cao-relay-fire'`, `to_agent = 'MUSE'`, `status = 'queued'`.
-- **Skip** `refused` and `cancelled` rows.
-- **Before picking a row up, check journal presence:**
-  ```bash
-  cao-relay admin journal-has --cao muse --fire-id <ROW_ID>
-  ```
-  `{"has":false}` means skip. The reconciler marks such a row `failed` and tells the requester.
-- **On pickup:** set `status` to `claimed`, then `started`. Write the run link into `evidence.relay.run_chat_url`. Do the update read-modify-write, guarded by `evidence.relay.v`, and bump `v` by 1.
-- **What the relay does next:** it checks its rows every 5 minutes and posts `Run: <link>` when the link appears. With no link 35 minutes after the start, it posts a visible failure and alerts.
-- Rows with `code = 'cao-relay-alert'` are alerts to Muse CAO, not starts.
-
-### What each start writes to `agent_comms` (real columns only)
+### What each start writes
+In the brain, one pointer row in `aos.relay_pointers` (no message text):
 | Column | Value |
 |---|---|
-| `to_agent` | the CAO's agent name from the registry (`MUSE`, `Claude CAO`, `Gemini CAO`, `AXON-Hermes CAO`) |
-| `from_agent` | the requesting CAO bot's agent name |
-| `from_harness` / `to_harness` | `cao-relay` / the CAO key |
-| `channel` | `slack` |
-| `subject` | `Start for <CAO>` |
-| `body` | the task text. The brain row is the content record, kept 90 days, then archived to the vault. |
-| `status` | `queued` → … |
-| `fired_at` / `completed_at` | timestamps |
-| `evidence` | `{relay:{v, cao, task_hash, norm_hash, idem_key, epoch, slack{channel_id,ts,permalink}, run_chat_url, link_posted_at, last_progress_at, claim, lock_cleared, closeout}}` |
-| `code` | `cao-relay-fire` |
-| `parent_id` | unused |
-| `id` | the fire id quoted in the short reply, and the run id |
+| `row_id` | `relay-<yyyymmddhhmmss>-<4 hex>`, made by the relay. It is the fire id quoted in the short reply, and the run id. |
+| `from_cao` / `to_cao` | the sender and target CAO keys (`muse`, `claude`, `gemini`, `axon`). A start a CAO sends to itself, or one with no CAO sender, has no pointer row. |
+| `slack_channel` | `cao-bots`, `cao-muse`, `cao-claude`, `cao-gemini` or `cao-axon` |
+| `slack_link` | the Slack permalink of the message that started it |
+| `fire_id` | the fire this message started |
+| `state` | `posted` (queued) → `delivered` (claimed, started, linked) → `answered` (closed); `failed` (failed, expired, refused, cancelled) |
+
+In the relay's own ledger (`fire-ledger.json`, local, no text): the fine status, `fired_at` / `completed_at`, and `evidence` = `{v, cao, task_hash, norm_hash, idem_key, epoch, slack{channel_id,ts,permalink}, run_chat_url, link_posted_at, last_progress_at, claim, lock_cleared, closeout}`.
 
 ---
 
@@ -377,15 +360,15 @@ It is a 1-minute cron on the mini:
 ```
 * * * * * /opt/cao-relay/deploy/scripts/mini-poller.sh
 ```
-It runs as user `cao-relay-muse`. The secrets come from that user's keychain and reach the poller on stdin only.
+It runs as user `cao-relay-muse`. The brain key comes from that user's keychain and reaches the poller on stdin only; the Slack read token for the fallback sweep comes from the doorman (identity `muse`, keychain item `nvg-doorman-identity`).
 - **What it checks:** it curls `http://198.19.0.2:9101..9104/health` and reads the `cao_heartbeat` row for MUSE.
 - **Offline:** the heartbeat is older than 30 min, or the brain is down (fail-safe).
-- **Alert at 45 min:** an `agent_comms` row to `Claude CAO`. If the brain is down, it writes `/var/lib/cao-relay/mini/alerts.jsonl` instead, which Claude CAO reads at the morning check-in.
-- **Failover detected:** the VM Muse health fails 3 consecutive polls AND Muse CAO is offline. The poller sends the failover row to `Claude CAO` once.
+- **Alert at 45 min:** a line in `/var/lib/cao-relay/mini/alerts.jsonl`, which Claude CAO reads at the morning check-in.
+- **Failover detected:** the VM Muse health fails 3 consecutive polls AND Muse CAO is offline. The poller writes the failover alert for `Claude CAO` once.
 - **Dead-owner sweep (R7-NEW-4):** while the Muse program is down, the poller runs the D5 §6 sweep every 6 h with the **reduced** still-active test: prongs (b) + (c) only. Prong (a) is skipped, because the mini has no adapter to probe and no v1 adapter has a live probe anyway.
-  - (b) reads the last 24 h of Slack history in the four CAO channels from `config/registry.json`. It uses the Muse CAO bot token (`channels:history` / `groups:history`) from the `cao-relay-muse` login keychain, keychain item `cto-relay-muse-slack-bot`.
+  - (b) reads the last 24 h of Slack history in the four CAO channels from `config/registry.json`. It uses the Muse CAO bot token (`channels:history` / `groups:history`), asked from the doorman with the `muse` identity at the time of the sweep. No Slack token is kept in the keychain or written to disk.
 
-**Mini keychain items** (C1-FU-3) are created at failover setup in each `cao-relay-<cao>` macOS user's login keychain, with the same names as the vault labels: `cto-relay-<cao>-slack-app`, `cto-relay-<cao>-slack-bot`, and, Muse only, `cto-relay-muse` (the brain key).
+**Mini keychain items** (C1-FU-3) are created at failover setup in each `cao-relay-<cao>` macOS user's login keychain, with the same names as the vault labels: `cto-relay-muse` (the one shared brain key, in every relay's keychain) and `nvg-doorman-identity` (account = that relay's identity). `mini-run.sh` copies only the brain key to a private temp dir; it never touches Slack tokens.
   - (c) reads `evidence.relay.last_progress_at` from the **live** brain rows, not from the up-to-24-hours-stale off-host run-log copy.
   - Findings go to `Claude CAO`, labelled "reduced test: prongs b+c". The fallback never posts in Slack.
 - **The poller's own liveness (R7-NEW-5):** every run writes a `cao_heartbeat` row for agent `MINI-POLLER`. The VM Muse program checks it every minute. If it is stale for over 5 min, it alerts and posts "The mini poller has stopped answering…" in #cao-bots, once per incident, then "The mini poller is back." on recovery.
@@ -417,7 +400,7 @@ The report records its read position, so each alert is shown once. `alerts.jsonl
    - `PROCEED` means go on.
 2. **Make sure the VM programs are stopped,** if the VM is reachable:
    ```bash
-   sudo systemctl stop cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon-hermes
+   sudo systemctl stop cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon
    ```
 3. **Start the mini relays:**
    ```bash
@@ -445,7 +428,7 @@ Each program runs as its own macOS user (`cao-relay-<cao>`) with its own login k
   2. Writes `backups/<date>.sha256` into the vault.
   3. Verifies checksum + record count on the mini.
   4. **Copy vs brain (R5-FU-9):** `cao-relay copy-check` hands each copy's fire ids to the Muse program. It posts a gap in #cao-bots when a brain row fired 1–23 h ago has no journal record in the copy.
-  5. **Files the mirror and the brain-row archive into the vault within a day** (R7-FU-11, R7-FU-12): `muse/mirror/` goes to `$VAULT_MIRROR_PATH`, and `muse/archive/brain-archive-<YYYY-MM>.jsonl` goes to `$VAULT_ARCHIVE_PATH`. The archive is JSON lines, one full `agent_comms` row per line.
+  5. **Files the mirror and the brain-row archive into the vault within a day** (R7-FU-11, R7-FU-12): `muse/mirror/` goes to `$VAULT_MIRROR_PATH`, and `muse/archive/brain-archive-<YYYY-MM>.jsonl` goes to `$VAULT_ARCHIVE_PATH`. The archive is JSON lines, one run row per line (ids, hashes, links and states; no task text).
   6. Commits and pushes.
 
   On any failure it writes a capped alert for the 9am check-in.
@@ -526,7 +509,7 @@ A run is **still active** if any of these holds:
 - **A program that restarts during the outage** cannot reach the brain, so it refuses to start (fail-closed). Its restore and reconciler run once the brain is back and it starts; loss notices arrive then. Meanwhile, if the Muse program is still up, it posts "<CAO> relay is down" in #cao-bots after 3 failed health polls.
 
 ## 11c. The 3-second reply bound (C2-FU-9)
-- The brain work before a short reply runs inside a **2.2 s budget from socket receipt**. That work is the three cap counts and the live lease read, run concurrently, then the brain-row write.
+- The brain work before a short reply runs inside a **2.2 s budget from socket receipt**. That work is the live lease read, then the pointer-row write.
 - If the brain answers too slowly for the budget, the start is held exactly like a brain-down start ("Queued. Brain is down. Will retry.") and retried after **1 minute** rather than the hourly outage cadence. A write that lands late is adopted by the retry, never written twice.
 - The post fence's live lease read reuses the fire path's own check when it is under 2 s old, and is capped at 0.7 s.
 - **What stays measured, not bounded:** time an event waits in the serial lane behind another single entry's work. Periodic jobs take the lane one entry at a time, never for a whole job. Ack latency is timed from socket receipt, with P50/P95/max and `ackBreachCount` on `/health`. The Phase 5 proof pack records it (acceptance: under 3 s, measured).
@@ -552,7 +535,7 @@ Review tokens (≤ 50,000 a week) are Muse CAO's own harness spend. They are rec
 **Pause.** If starts per week stay below 5 for two reviews in a row and the trend is flat:
 1. Run:
    ```bash
-   sudo systemctl stop cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon-hermes
+   sudo systemctl stop cao-relay-muse cao-relay-claude cao-relay-gemini cao-relay-axon
    ```
 2. Post "relay paused" in #cao-bots through the post-queue, before stopping Muse.
 3. Write a runbook entry.

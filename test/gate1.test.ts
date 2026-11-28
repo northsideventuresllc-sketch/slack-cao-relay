@@ -5,7 +5,6 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REPLY_BREAKER } from '../src/breaker.js';
-import { BrokerServer, BrokeredBrain, brokerSocketPath } from '../src/broker.js';
 import { MuseDuties } from '../src/sweep.js';
 import { Maintenance } from '../src/maintenance.js';
 import { caoEntry } from '../src/config.js';
@@ -45,21 +44,6 @@ test('C2-FU-9: a slow brain cannot push the short reply past the ack budget — 
   assert.equal(h.brain.rows.size >= 1, true);
   assert.match(h.sender.texts().at(-1)!, /^Started: slow brain/);
   assert.equal([...h.brain.rows.values()].filter((r) => r.status === 'queued').length, 1, 'never written twice');
-});
-
-test('KAR-FU-2: broker countStarts — global totals or the socket\'s own agent only', async () => {
-  const clock = new FakeClock();
-  const brain = new FakeBrain(clock);
-  const reg = testRegistry();
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
-  const server = new BrokerServer(brain, runDir, silentLogger);
-  server.start(reg.caos.filter((c) => c.adapter === 'manual'));
-  await new Promise((r) => setTimeout(r, 50));
-  const claude = new BrokeredBrain(brokerSocketPath(runDir, 'claude'));
-  assert.equal(await claude.countStarts(new Date(0).toISOString()), 0);
-  assert.equal(await claude.countStarts(new Date(0).toISOString(), 'Claude CAO'), 0);
-  await assert.rejects(claude.countStarts(new Date(0).toISOString(), 'Gemini CAO'));
-  server.stop();
 });
 
 test('OPT-FU-4: the breaker\'s single reply survives a restart inside the window', async () => {
@@ -113,7 +97,7 @@ test('C1-FU-4: a long task is clamped to 10 words in the short reply', async () 
 test('OPT-FU-2: a `linked` brain row with no journal entry is marked failed by the reconciler', async () => {
   const h = await makeHarness('claude');
   const claude = caoEntry(h.registry, 'claude');
-  const row = await h.brain.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', subject: 's', body: 'b', firedAt: new Date(h.clock.now()).toISOString(), evidence: { v: 0, cao: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } } });
+  const row = await h.brain.insertFireRow({ toAgent: 'Claude CAO', fromAgent: 'MUSE', toHarness: 'claude', firedAt: new Date(h.clock.now()).toISOString(), evidence: { v: 0, cao: 'claude', task_hash: 'x', norm_hash: 'y', epoch: 1, slack: { channel_id: claude.channelId, ts: null, permalink: null } } });
   h.brain.rows.get(row.id)!.status = 'linked';
   await h.advance(10 * MIN);
   await new Maintenance(h.core).reconcile();
@@ -144,7 +128,7 @@ test('ECO-FU-4: a row whose archived_at patch failed is not appended to the arch
   const clock = new FakeClock();
   const brain = new FakeBrain(clock);
   const reg = testRegistry();
-  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', subject: 's', body: 't', evidence: { v: 0, cao: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
+  const row = await brain.insertFireRow({ toAgent: 'MUSE', fromAgent: 'MUSE', toHarness: 'muse', evidence: { v: 0, cao: 'muse', task_hash: 'h', norm_hash: 'n', epoch: 1 }, firedAt: new Date(clock.now()).toISOString() });
   brain.rows.get(row.id)!.status = 'closed';
   brain.rows.get(row.id)!.completed_at = new Date(clock.now()).toISOString();
   clock.advance(91 * DAY);

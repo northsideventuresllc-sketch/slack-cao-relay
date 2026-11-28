@@ -1,5 +1,5 @@
 // Post-queue file layout (R7-FU-7): v1 has exactly ONE post-queue file, the
-// Muse one below. The Claude, Gemini and AXON-Hermes programs have no
+// Muse one below. The Claude, Gemini and AXON CAO programs have no
 // post-queue file: off-VM CAOs cannot write to this VM (D2 v1 note), so their
 // words reach Slack through Muse CAO, i.e. this file. Their programs' `message`
 // events feed only abort parsing; the Muse program's `message` events also feed
@@ -13,7 +13,7 @@
 // Entry kinds:
 //   {"kind":"post","channel":"cao-bots"|"cao-muse"|…,"text":"…"} — Muse CAO's own words:
 //       an ordinary post; the poster strips the start pattern; it can never start work.
-//   {"kind":"fire","cao":"muse"|"claude"|"gemini"|"axon-hermes","task":"…"} — JB's start,
+//   {"kind":"fire","cao":"muse"|"claude"|"gemini"|"axon","task":"…"} — JB's start,
 //       relayed by Muse CAO (D4: "Muse CAO relays the start into Slack as the Muse CAO bot").
 //       For muse: fed to this program's own fire parser path. For another CAO: posted as
 //       the explicit start pattern in that CAO's channel, so ONLY that CAO's program parses

@@ -97,7 +97,7 @@ export function containsStartPattern(text: string, caos: CaoEntry[]): boolean {
   return re.test(text);
 }
 
-/** D3: turn plain "@Claude CAO" names into real mentions. Longest names first so "AXON-Hermes CAO" wins. */
+/** D3: turn plain "@Claude CAO" names into real mentions. Longest names first so "AXON CAO" wins. */
 export function toRealMentions(text: string, caos: CaoEntry[]): string {
   let out = text;
   const sorted = [...caos].sort((a, b) => b.displayName.length - a.displayName.length);

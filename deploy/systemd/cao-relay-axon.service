@@ -1,48 +1,47 @@
-# /etc/systemd/system/cao-relay-axon-hermes.service
-# Slack CAO Loop relay — AXON-Hermes CAO. One of four separate services (PLAN-v7 D6):
+# /etc/systemd/system/cao-relay-axon.service
+# Slack CAO Loop relay — AXON CAO. One of four separate services (PLAN-v7 D6):
 # shared code, separate process, separate service user, separate keys, queue and journal.
 #
-# Keys (D7): ExecStartPre runs /usr/local/bin/cao-relay-fetch-keys axon-hermes as root on EVERY
-# start; it fetches fresh from the Secure Vault into tmpfs /run/credentials/cao-relay-axon-hermes/
-# (dir 0500, files 0400, owner cao-relay-axon-hermes) and the process reads them from there
-# (CAO_RELAY_KEY_DIR). Files:
-#   slack-app-token  (Socket Mode app-level token)
-#   slack-bot-token  (bot token)
+# Keys: the Slack bot and app tokens come only from the doorman. The relay reads ITS OWN
+# identity token from the systemd credential `doorman-identity` (LoadCredential below) and asks the
+# doorman for CAO_RELAY_AXON_BOT_TOKEN and CAO_RELAY_AXON_APP_TOKEN (job cao-relay). ExecStartPre
+# cao-relay-fetch-keys axon writes only the NI Brain key (brain-key) and the read-only vault deploy
+# key to tmpfs /run/credentials/cao-relay-axon/ (CAO_RELAY_KEY_DIR).
 # No key value ever appears in this file.
 
 [Unit]
-Description=Slack CAO Loop relay — AXON-Hermes CAO
+Description=Slack CAO Loop relay — AXON CAO
 Documentation=file:///opt/cao-relay/docs/RELAY-RUNBOOK.md
-After=network-online.target cao-relay-muse.service
-Wants=network-online.target cao-relay-muse.service
+After=network-online.target
+Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-User=cao-relay-axon-hermes
-Group=cao-relay-axon-hermes
+User=cao-relay-axon
+Group=cao-relay-axon
 SupplementaryGroups=cao-relay-admin
 EnvironmentFile=/etc/cao-relay/relay.env
-Environment=CAO_RELAY_CAO=axon-hermes
-Environment=CAO_RELAY_KEY_DIR=/run/credentials/cao-relay-axon-hermes
-Environment=CAO_RELAY_STATE_DIR=/var/lib/cao-relay/axon-hermes
+Environment=CAO_RELAY_CAO=axon
+Environment=CAO_RELAY_KEY_DIR=/run/credentials/cao-relay-axon
+Environment=CAO_RELAY_STATE_DIR=/var/lib/cao-relay/axon
 Environment=CAO_RELAY_RUN_DIR=/run/cao-relay
 Environment=CAO_RELAY_HOLDER=vm
 # Each program reads back close-out logs from its own vault checkout (git fetch, read-only use).
-Environment=CAO_RELAY_VAULT_DIR=/var/lib/cao-relay/axon-hermes/vault
-ExecStartPre=+/usr/local/bin/cao-relay-fetch-keys axon-hermes
+Environment=CAO_RELAY_VAULT_DIR=/var/lib/cao-relay/axon/vault
+LoadCredential=doorman-identity:/etc/credstore/doorman-identity-hermes
+ExecStartPre=+/usr/local/bin/cao-relay-fetch-keys axon
 ExecStart=/usr/bin/node /opt/cao-relay/dist/index.js run
-ExecStopPost=+/usr/local/bin/cao-relay-fetch-keys --wipe axon-hermes
+ExecStopPost=+/usr/local/bin/cao-relay-fetch-keys --wipe axon
 # Fail-closed: brain down / lease held elsewhere → exit 1 → retried every 30 s.
 # Exit 78 = stay down (revoked token, Socket Mode reconnects exhausted, config placeholders) → alert, no restart.
 Restart=on-failure
 RestartSec=30
 RestartPreventExitStatus=78
 
-StateDirectory=cao-relay/axon-hermes
+StateDirectory=cao-relay/axon
 StateDirectoryMode=0700
-# /run/cao-relay/<cao> (control socket) and /run/cao-relay/broker come from
-# /etc/tmpfiles.d/cao-relay.conf so the broker and admin groups can reach them.
+# /run/cao-relay/<cao> (control socket) comes from /etc/tmpfiles.d/cao-relay.conf so the admin group can reach it.
 UMask=0077
 
 # Isolation envelope (D6): MemoryMax=128M, CPUQuota=25%. The program's own watchdog
@@ -68,7 +67,7 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
-ReadWritePaths=/var/lib/cao-relay/axon-hermes /run/cao-relay
+ReadWritePaths=/var/lib/cao-relay/axon /run/cao-relay
 ReadOnlyPaths=/opt/cao-relay /etc/cao-relay/relay.env
 
 [Install]

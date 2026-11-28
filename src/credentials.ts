@@ -1,16 +1,15 @@
-// Keys arrive through tmpfs: ExecStartPre (`cao-relay-fetch-keys <cao>`) fetches
-// them fresh from the Secure Vault into /run/credentials/cao-relay-<cao>/ on
-// every start, and the unit passes that directory to the process as
-// CAO_RELAY_KEY_DIR (D7). No unit uses `LoadCredential=` — systemd loads those
-// before ExecStartPre runs, which would break "fresh fetch wins" (KAR-FU-3).
-// $CREDENTIALS_DIRECTORY is read only as a fallback when CAO_RELAY_KEY_DIR is unset.
-// Values are never logged, never written anywhere else.
+// The brain key arrives through tmpfs: ExecStartPre (`cao-relay-fetch-keys <cao>`) fetches
+// it fresh from the Secure Vault into /run/credentials/cao-relay-<cao>/ on every start, and the
+// unit passes that directory to the process as CAO_RELAY_KEY_DIR (D7). Fetched there on purpose:
+// systemd loads LoadCredential= files before ExecStartPre runs, which would break "fresh fetch wins" (KAR-FU-3).
+// The one LoadCredential= the unit does use is the relay's own doorman identity token
+// (`doorman-identity`, src/doorman.ts): it is a static file under /etc/credstore, not a fetched key.
+// Slack tokens are not here at all: they come from the doorman. Values are never logged.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const CRED_SLACK_APP = 'slack-app-token';
-export const CRED_SLACK_BOT = 'slack-bot-token';
+// shortcut: one shared NI Brain key for all four relays (accepted decision); per-relay brain keys are a later change.
 export const CRED_BRAIN = 'brain-key';
 
 export class MissingCredential extends Error {
