@@ -93,10 +93,11 @@ export class MuseDuties {
     private readonly alert: (code: string, ids?: Record<string, string | number | null>) => void,
     private readonly fetchHealth: (port: number) => Promise<boolean>,
     private readonly tz: string = 'America/New_York',
+    private readonly only: string | null = null, // a sibling relay runs the housekeeping duties over its own CAO only
   ) {}
 
   private caos(): CaoEntry[] {
-    return this.registry.caos.filter((c) => !isPlaceholder(c.agentName));
+    return this.registry.caos.filter((c) => !isPlaceholder(c.agentName) && (this.only === null || c.key === this.only));
   }
 
   private async lastCaoMessageAt(cao: CaoEntry): Promise<number | null> {
@@ -171,7 +172,7 @@ export class MuseDuties {
         if (!ev || ev.lock_cleared) continue;
         const progress = Date.parse(ev.last_progress_at ?? row.fired_at ?? '');
         if (!Number.isFinite(progress) || now - progress < STALL_MS) continue;
-        const next: RelayEvidence = { ...ev, v: ev.v + 1, lock_cleared: { by: 'cao-relay-muse', at: iso(now) } };
+        const next: RelayEvidence = { ...ev, v: ev.v + 1, lock_cleared: { by: `cao-relay-${this.only ?? 'muse'}`, at: iso(now) } };
         const ok = await this.brain.patchFireRow(row.id, { evidence: next }, { version: ev.v }).catch(() => null);
         if (ok) this.log.info('stalled lock cleared', { cao: cao.key, fireId: row.id });
       }

@@ -119,6 +119,7 @@ export class RelayProgram {
     // Every relay reaches the brain itself (no broker, no Muse-held key). Run state lives in this relay's ledger.
     const supabaseUrl = cfg.supabaseUrl;
     const ledger = new FireLedger(join(cfg.stateDir, 'fire-ledger.json'));
+    if (ledger.quarantinedTo) alert('fire-ledger-corrupt-quarantined');
     const { brain, lease, slack } = await bootstrapRelay(cfg, {
       doorman,
       makeBrain: () =>
@@ -129,6 +130,7 @@ export class RelayProgram {
           timeoutMs: 1500,
           ledger,
           directory: { slackDomain: cfg.registry.workspace.domain, caoBotsChannelId: cfg.registry.caoBotsChannelId, caos: cfg.registry.caos },
+          onNoPointer: (ids) => alert('pointer-not-written', ids),
         }),
       makeSlack: (t) =>
         new SlackChannel({
@@ -236,6 +238,15 @@ export class RelayProgram {
       }
     }
 
+    // Every relay keeps its own ledger tidy: archive, prune and stalled-lock clearing over its own CAO only.
+    const ownDuties = isMuse ? null : new MuseDuties(brain, cfg.registry, poster, slack, this.clock, this.log, alert, (port) => probeHealth(port), cfg.timezone, cao.key);
+    const housekeeping = duties ?? ownDuties;
+
+    // Pointer states the brain missed while it was down (the ledger is written first): push them now and every minute.
+    const syncPointers = (): Promise<unknown> => (brain.syncPointers ? brain.syncPointers() : Promise.resolve(0));
+    await syncPointers().catch(() => undefined);
+    this.every(MIN, syncPointers);
+
     // Socket Mode.
     await slack.start();
     this.socketUp = true;
@@ -267,10 +278,8 @@ export class RelayProgram {
       this.every(6 * HOUR, () => d.sweep());
     }
     this.daily(CHECKIN_HOUR, 0, async () => {
-      if (duties) {
-        await duties.clearStalledLocks();
-        await duties.sweep();
-      }
+      if (housekeeping) await housekeeping.clearStalledLocks();
+      if (duties) await duties.sweep();
       await maintenance.pollRows();
       await this.lane.run(() => maintenance.nineAm());
       if (duties) await duties.dailyOpen();
@@ -286,8 +295,8 @@ export class RelayProgram {
         core.d.quarantine.prune();
         this.log.info('nightly compaction', r);
       });
-      if (duties && cfg.archiveDir) {
-        const archived = await duties.archiveOldRows(cfg.archiveDir);
+      if (housekeeping && cfg.archiveDir) {
+        const archived = await housekeeping.archiveOldRows(cfg.archiveDir);
         ledger.pruneArchived(this.clock(), 120 * 24 * HOUR);
         this.log.info('brain rows archived', { archived });
       }

@@ -19,32 +19,57 @@ import { FakeBrain, FakeClock, testRegistry } from './helpers.js';
 
 // ---- stubs ------------------------------------------------------------------------------------
 
-/** Mirrors the vault wrappers aos_relay_select / upsert / update / delete over three tables. */
+/** The real tables' columns and the live lease-name CHECK (0004). The stub rejects what the database would reject. */
+const COLUMNS: Record<RelayTable, string[]> = {
+  cao_relay_lease: ['name', 'epoch', 'holder', 'acquired_at', 'heartbeat_at', 'expires_at'],
+  cao_heartbeat: ['agent', 'heartbeat_at'],
+  relay_pointers: ['row_id', 'from_cao', 'to_cao', 'slack_channel', 'slack_link', 'fire_id', 'state', 'created_at', 'updated_at'],
+};
+const LEASE_NAMES = ['muse', 'claude', 'gemini', 'axon'];
+const OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte'];
+
+/** Mirrors the vault wrappers aos_relay_select / upsert / update over three tables, including their checks. */
 export class StubAos implements AosRelayApi {
   tables: Record<RelayTable, Array<Record<string, unknown>>> = { cao_relay_lease: [], cao_heartbeat: [], relay_pointers: [] };
-  private static readonly KEY: Record<RelayTable, string> = { cao_relay_lease: 'name', cao_heartbeat: 'agent', relay_pointers: 'row_id' };
   calls: Array<{ fn: string; table: string }> = [];
 
+  private cols(table: RelayTable, keys: string[]): void {
+    for (const k of keys) if (!COLUMNS[table].includes(k)) throw new Error(`no such column: ${k}`);
+  }
+  private check(table: RelayTable, row: Record<string, unknown>): void {
+    if (table === 'cao_relay_lease' && 'name' in row && !LEASE_NAMES.includes(row.name as string)) throw new Error('23514 cao_relay_lease_name_known');
+  }
   private match(row: Record<string, unknown>, filter: Filter): boolean {
     return Object.entries(filter).every(([k, v]) => {
       if (v && typeof v === 'object') {
-        const [[op, val]] = Object.entries(v as Record<string, unknown>) as [[string, string | number]];
-        const a = row[k] as string | number;
-        return op === 'lt' ? a < val : op === 'lte' ? a <= val : op === 'gt' ? a > val : op === 'gte' ? a >= val : op === 'ne' ? a !== val : a === val;
+        const entries = Object.entries(v as Record<string, unknown>);
+        if (entries.length !== 1) throw new Error('one operator per column');
+        const [[op, val]] = entries as [[string, string | number | null]];
+        if (!OPS.includes(op)) throw new Error('unknown operator');
+        if (val === null && op !== 'eq' && op !== 'ne') throw new Error('null is allowed only with eq or ne');
+        const a = row[k] as string | number | null;
+        if (val === null) return op === 'eq' ? a == null : a != null;
+        return op === 'lt' ? a! < val : op === 'lte' ? a! <= val : op === 'gt' ? a! > val : op === 'gte' ? a! >= val : op === 'ne' ? a !== val : a === val;
       }
-      return row[k] === v;
+      return v === null ? row[k] == null : row[k] === v;
     });
   }
   async select(table: RelayTable, filter: Filter, limit = 100): Promise<unknown[]> {
     this.calls.push({ fn: 'select', table });
+    this.cols(table, Object.keys(filter));
     return this.tables[table].filter((r) => this.match(r, filter)).slice(0, limit).map((r) => ({ ...r }));
   }
   async upsert(table: RelayTable, row: Record<string, unknown>, conflict: string, onConflict: 'update' | 'nothing' = 'update'): Promise<unknown[]> {
     this.calls.push({ fn: 'upsert', table });
+    if (onConflict !== 'update' && onConflict !== 'nothing') throw new Error('p_on_conflict must be update or nothing');
+    this.cols(table, [...Object.keys(row), conflict]);
+    this.check(table, row);
     const cur = this.tables[table].find((r) => r[conflict] === row[conflict]);
     if (cur) {
-      if (onConflict === 'nothing') return [];
+      // the SQL: do nothing when asked to, or when the row holds only the key; otherwise merge
+      if (onConflict === 'nothing' || Object.keys(row).every((k) => k === conflict)) return [];
       Object.assign(cur, row);
+      if (table === 'relay_pointers') cur.updated_at = new Date().toISOString();
       return [{ ...cur }];
     }
     const now = new Date().toISOString();
@@ -54,14 +79,15 @@ export class StubAos implements AosRelayApi {
   }
   async update(table: RelayTable, filter: Filter, patch: Record<string, unknown>): Promise<number> {
     this.calls.push({ fn: 'update', table });
+    if (Object.keys(filter).length === 0) throw new Error('update needs a filter');
+    this.cols(table, [...Object.keys(filter), ...Object.keys(patch)]);
+    this.check(table, patch);
     const hit = this.tables[table].filter((r) => this.match(r, filter));
-    for (const r of hit) Object.assign(r, patch);
+    for (const r of hit) {
+      Object.assign(r, patch);
+      if (table === 'relay_pointers') r.updated_at = new Date().toISOString(); // the trigger
+    }
     return hit.length;
-  }
-  async remove(table: RelayTable, filter: Filter): Promise<number> {
-    const before = this.tables[table].length;
-    this.tables[table] = this.tables[table].filter((r) => !this.match(r, filter));
-    return before - this.tables[table].length;
   }
 }
 
@@ -187,7 +213,7 @@ test('fetchRelayTokens never builds another relay\'s secret name', async () => {
 // ---- 4. bot-token-only ----------------------------------------------------------------------------
 
 test('a user token (xoxp-), an empty token, or an auth.test answer with no bot_id each stop start-up', async () => {
-  const userTok = stubDoorman({ tokenFor: (s) => (s.endsWith('BOT_TOKEN') ? 'xoxp-user-token' : 'xapp-1') });
+  const userTok = stubDoorman({ tokenFor: (s) => (s.endsWith('BOT_TOKEN') ? 'xoxp-u' : 'xapp-1') });
   await assert.rejects(start('claude', new FakeBrain(new FakeClock()), userTok), (e: Fatal) => e instanceof Fatal && e.exitCode === EXIT_STAY_DOWN && /xoxp/.test(e.reason));
   // the doorman never hands back an empty value (it answers refused); a value that is empty is refused too
   const empty = stubDoorman({ tokenFor: () => '' });
@@ -331,6 +357,182 @@ test('display names: nothing says "AXON-Hermes" (case-sensitive and the axon-her
   assert.equal(grepTree('AXON-Hermes', 'src', 'docs', 'config', 'deploy', 'package.json', 'README.md'), '');
   const lines = grepTree('axon-hermes', 'src', 'config', 'deploy', 'docs')
     .split('\n')
-    .filter((l) => l && !/fire-axon-hermes|cto-relay-axon-hermes|cto-relay-\{muse|cao-relay-axon-hermes|legacy|axon-hermes. is read as|axon-hermes\/|axon-hermes state|axon-hermes -> axon|axon-hermes`/.test(l));
+    .filter((l) => l && !l.startsWith('deploy/scripts/') && !/fire-axon-hermes|cto-relay-axon-hermes|cto-relay-\{muse|legacy|axon-hermes. is read as|axon-hermes\/|axon-hermes state|axon-hermes -> axon|axon-hermes`/.test(l));
   assert.deepEqual(lines, []);
+  // the cutover steps enable only units that exist
+  assert.doesNotMatch(readFileSync(join(REPO_ROOT, 'docs/CAO-CUTOVER.md'), 'utf8'), /enable --now[^\n]*cao-relay-axon-hermes/);
+});
+
+// ---- 8. gate round 1: contract, lease name, pointer sync, doorman outage ------------------------------------------
+
+/** The functions of supabase/migrations/0004_relay_to_aos.sql: name -> { param -> hasDefault }. */
+function sqlFunctions(): Map<string, Map<string, boolean>> {
+  const sql = readFileSync(join(REPO_ROOT, 'supabase/migrations/0004_relay_to_aos.sql'), 'utf8');
+  const out = new Map<string, Map<string, boolean>>();
+  for (const m of sql.matchAll(/create or replace function public\.(aos_relay_\w+)\(([^)]*)\)/g)) {
+    const params = new Map<string, boolean>();
+    for (const part of m[2]!.split(',')) {
+      const t = part.trim();
+      if (!t) continue;
+      params.set(t.split(/\s+/)[0]!, /\bdefault\b/i.test(t));
+    }
+    out.set(m[1]!, params);
+  }
+  return out;
+}
+
+test('contract: every RPC body key the HttpAosRelay client sends is a real parameter of the 0004 function, and every required parameter is sent', async () => {
+  const { createServer } = await import('node:http');
+  const bodies: Array<{ fn: string; body: Record<string, unknown> }> = [];
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      bodies.push({ fn: (req.url ?? '').split('/').pop()!, body: JSON.parse(raw) as Record<string, unknown> });
+      res.setHeader('content-type', 'application/json');
+      res.end(req.url?.endsWith('aos_relay_update') ? '1' : '[]');
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { HttpAosRelay } = await import('../src/brain.js');
+    const http = new HttpAosRelay({ supabaseUrl: `http://127.0.0.1:${port}`, apiKey: 'test-key-not-real' });
+    await http.select('cao_relay_lease', { name: 'axon' }, 1);
+    await http.upsert('cao_relay_lease', { name: 'axon', epoch: 1 }, 'name', 'nothing');
+    await http.upsert('cao_heartbeat', { agent: 'MUSE', heartbeat_at: 'x' }, 'agent');
+    await http.update('cao_relay_lease', { name: 'axon', epoch: 1 }, { epoch: 2 });
+  } finally {
+    server.close();
+  }
+  const fns = sqlFunctions();
+  assert.deepEqual([...fns.keys()].sort(), ['aos_relay_delete', 'aos_relay_select', 'aos_relay_update', 'aos_relay_upsert']);
+  assert.equal(bodies.length, 4);
+  for (const { fn, body } of bodies) {
+    const params = fns.get(fn);
+    assert.ok(params, `no SQL function ${fn}`);
+    for (const k of Object.keys(body)) assert.ok(params.has(k), `${fn}: body key ${k} is not a parameter of the SQL function`);
+    for (const [p, hasDefault] of params) if (!hasDefault) assert.ok(p in body, `${fn}: required parameter ${p} is not sent`);
+  }
+  const upserts = bodies.filter((b) => b.fn === 'aos_relay_upsert').map((b) => b.body.p_on_conflict);
+  assert.deepEqual(upserts, ['nothing', 'update']);
+});
+
+test('0004 carries the lease-name change (axon) and equals the vault 012 body after its 3-line header', () => {
+  const sql = readFileSync(join(REPO_ROOT, 'supabase/migrations/0004_relay_to_aos.sql'), 'utf8');
+  assert.match(sql, /check \(name in \('muse', 'claude', 'gemini', 'axon'\)\)/);
+  assert.match(sql, /drop function if exists public\.aos_relay_upsert\(text, jsonb, text\)/);
+  assert.match(sql, /p_on_conflict text default 'update'/);
+  assert.match(sql, /create trigger relay_pointers_touch/);
+});
+
+test('the lease for the old name axon-hermes is refused by the lease-name check; axon is accepted', async () => {
+  const { aos } = pointerBrain();
+  await assert.rejects(aos.upsert('cao_relay_lease', { name: 'axon-hermes', epoch: 1 }, 'name', 'nothing'), /23514/);
+  assert.equal((await aos.upsert('cao_relay_lease', { name: 'axon', epoch: 1 }, 'name', 'nothing')).length, 1);
+  assert.equal((await aos.upsert('cao_relay_lease', { name: 'axon', epoch: 9, holder: 'x' }, 'name', 'nothing')).length, 0); // never overwrites a live holder
+  assert.equal(aos.tables.cao_relay_lease[0]!.epoch, 1);
+});
+
+test('the stub rejects unknown columns and a null filter with an ordering operator, as the SQL does', async () => {
+  const { aos } = pointerBrain();
+  await aos.upsert('relay_pointers', { row_id: 'r1', from_cao: 'muse', to_cao: 'claude', slack_channel: 'cao-claude', slack_link: 'https://x.slack.com/archives/C1', state: 'posted' }, 'row_id');
+  await assert.rejects(aos.select('relay_pointers', { nope: 1 }), /no such column/);
+  await assert.rejects(aos.select('relay_pointers', { state: { lt: null } }), /null is allowed only with eq or ne/);
+  await assert.rejects(aos.update('relay_pointers', { row_id: 'x' }, { body: 'text' }), /no such column/);
+});
+
+const fromClaudeEvidence = (claude: { channelId: string }) => ({ v: 0, cao: 'gemini', task_hash: 'h', norm_hash: 'n', idem_key: 'k', epoch: 1, slack: { channel_id: claude.channelId, ts: '1762400000.000100', permalink: null } });
+
+test('pointer state survives a brain outage: the ledger is written first and syncPointers pushes it later', async () => {
+  const { aos, brain, reg, ledger } = pointerBrain();
+  const gem = reg.caos.find((c) => c.key === 'gemini')!;
+  const row = await brain.insertFireRow({ toAgent: gem.agentName, fromAgent: 'MUSE', toHarness: 'gemini', firedAt: new Date().toISOString(), evidence: fromClaudeEvidence(gem) });
+  const realUpdate = aos.update.bind(aos);
+  aos.update = async () => {
+    throw new Error('brain down');
+  };
+  const patched = await brain.patchFireRow(row.id, { status: 'closed', completed_at: new Date().toISOString() });
+  assert.ok(patched, 'the local patch lands even with the brain down');
+  assert.equal(ledger.get(row.id)!.status, 'closed');
+  assert.equal(ledger.get(row.id)!.pointer_synced, false);
+  assert.equal(aos.tables.relay_pointers[0]!.state, 'posted');
+  assert.equal(await brain.syncPointers!(), 0); // still down: nothing synced, nothing lost
+  aos.update = realUpdate;
+  assert.equal(await brain.syncPointers!(), 1);
+  assert.equal(aos.tables.relay_pointers[0]!.state, 'answered');
+  assert.equal(ledger.get(row.id)!.pointer_synced, true);
+});
+
+test('a held start retried after a brain outage keeps its author: the pointer is written for a CAO sender, and a missing pointer alerts', async () => {
+  const reg = testRegistry();
+  const gem = reg.caos.find((c) => c.key === 'gemini')!;
+  const aos = new StubAos();
+  const noPointer: Array<{ fireId: string; reason: string }> = [];
+  const brain = new DirectBrain({ relay: aos, ledger: new FireLedger(null), clock: new FakeClock().now, randomHex: () => 'cd34', directory: { slackDomain: reg.workspace.domain, caoBotsChannelId: reg.caoBotsChannelId, caos: reg.caos }, onNoPointer: (i) => noPointer.push(i) });
+  const claudeName = reg.caos.find((c) => c.key === 'claude')!.agentName;
+  await brain.insertFireRow({ toAgent: gem.agentName, fromAgent: claudeName, toHarness: 'gemini', firedAt: new Date().toISOString(), evidence: fromClaudeEvidence(gem) });
+  assert.equal(aos.tables.relay_pointers.length, 1);
+  assert.equal(aos.tables.relay_pointers[0]!.from_cao, 'claude');
+  assert.equal(noPointer.length, 0);
+  // a CAO writing to itself has no pointer: that is reported, not skipped silently
+  await brain.insertFireRow({ toAgent: gem.agentName, fromAgent: gem.agentName, toHarness: 'gemini', firedAt: new Date().toISOString(), evidence: { ...fromClaudeEvidence(gem), idem_key: 'k2' } });
+  assert.equal(noPointer.length, 1);
+  assert.equal(noPointer[0]!.reason, 'same-cao');
+  const { FireBook } = await import('../src/firebook.js');
+  assert.ok('heldFromAgent' in (new FireBook() as unknown as { byId: Map<string, object> }) === false); // the field lives on entries, not the book
+  assert.match(readFileSync(join(REPO_ROOT, 'src/core.ts'), 'utf8'), /fromAgent: e\.heldFromAgent \?\? 'CAO-RELAY'/);
+});
+
+test('the mini poller builds its brain with the pointer directory (the fallback sweep can list rows)', () => {
+  assert.match(readFileSync(join(REPO_ROOT, 'src/poller.ts'), 'utf8'), /directory: \{ slackDomain: registry\.workspace\.domain/);
+});
+
+test('a doorman that does not answer (network, 5xx, not JSON) is a retry, not a refusal; a real refusal stays down; the lease is let go', async () => {
+  const { HttpDoorman } = await import('../src/doorman.js');
+  const ask = (status: number, body: () => Promise<unknown>) =>
+    new HttpDoorman({ url: 'http://x', publishableKey: 'pk', identityToken: 'id', fetchImpl: async () => ({ status, json: body }) }).ask({ agent: 'claude', secret: 's', job: 'cao-relay', run: 'r' });
+  assert.equal((await ask(503, async () => ({}))).answer, 'unreachable');
+  assert.equal((await ask(200, async () => { throw new Error('not json'); })).answer, 'unreachable');
+  const net = await new HttpDoorman({ url: 'http://x', publishableKey: 'pk', identityToken: 'id', fetchImpl: async () => { throw new Error('ECONNRESET'); } }).ask({ agent: 'a', secret: 's', job: 'j', run: 'r' });
+  assert.equal(net.answer, 'unreachable');
+  assert.equal((await ask(403, async () => ({ answer: 'refused', why: 'no grant' }))).answer, 'refused');
+  const given = await ask(200, async () => ({ answer: 'given', value: ' xoxb-abc \n' }));
+  assert.deepEqual(given, { answer: 'given', value: 'xoxb-abc' });
+
+  const down: DoormanApi = { async ask() { return { answer: 'unreachable', why: 'doorman unreachable' }; } };
+  const brain = new FakeBrain(new FakeClock());
+  await assert.rejects(start('claude', brain, down), (e: Fatal) => e instanceof Fatal && e.exitCode === 1);
+  await assert.rejects(start('claude', new FakeBrain(new FakeClock()), stubDoorman({ refuse: () => true })), (e: Fatal) => e instanceof Fatal && e.exitCode === EXIT_STAY_DOWN);
+});
+
+test('start-up order: the brain answers and the lease is taken before the doorman is asked', async () => {
+  const order: string[] = [];
+  const brain = new FakeBrain(new FakeClock());
+  const ping = brain.ping.bind(brain);
+  brain.ping = async () => { order.push('ping'); return ping(); };
+  const insert = brain.insertLease.bind(brain);
+  brain.insertLease = async (r) => { order.push('lease'); return insert(r); };
+  const d = stubDoorman();
+  const ask = d.ask.bind(d);
+  d.ask = async (r) => { order.push('doorman'); return ask(r); };
+  await start('muse', brain, d);
+  assert.deepEqual(order.slice(0, 3), ['ping', 'lease', 'doorman']);
+});
+
+test('a corrupt fire-ledger.json is moved aside, never overwritten, and the relay is told', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ledger-'));
+  const path = join(dir, 'fire-ledger.json');
+  writeFileSync(path, '{"torn":');
+  const l = new FireLedger(path);
+  assert.ok(l.quarantinedTo && l.quarantinedTo.includes('.corrupt-'));
+  assert.equal(readFileSync(l.quarantinedTo!, 'utf8'), '{"torn":');
+  assert.equal(l.list().length, 0);
+});
+
+test('every relay, not only Muse, runs archive, prune and lock-clear over its own ledger', () => {
+  const src = readFileSync(join(REPO_ROOT, 'src/relay.ts'), 'utf8');
+  assert.match(src, /const ownDuties = isMuse \? null : new MuseDuties\(.*cao\.key\)/);
+  assert.match(src, /housekeeping\.clearStalledLocks\(\)/);
+  assert.match(src, /housekeeping\.archiveOldRows\(cfg\.archiveDir\)/);
 });

@@ -1,7 +1,7 @@
 // Lease handling (D6 failover + Contracts "The verifier is the lease table").
 // Lease 90 s, heartbeat 30 s. Acquire with epoch+1. A stale epoch may neither
-// fire nor post. 3 missed heartbeats (90 s) → stop firing/posting, alert Muse
-// CAO, and resume only after re-acquiring with epoch+1.
+// fire nor post. 3 missed heartbeats (90 s) → stop firing/posting, alert this relay's own
+// harness CAO, and resume only after re-acquiring with epoch+1.
 
 import type { BrainApi, LeaseRow } from './brain.js';
 import type { Logger } from './util/log.js';
@@ -48,7 +48,7 @@ export class LeaseManager {
   ) {}
 
   /** Acquire with epoch+1. Throws LeaseHeldElsewhere if another holder's lease is still live. */
-  async acquire(): Promise<number> {
+  async acquire(attempt = 0): Promise<number> {
     const now = this.clock();
     const row: LeaseRow = {
       name: this.name,
@@ -62,7 +62,10 @@ export class LeaseManager {
     let got: LeaseRow | null;
     if (!current) {
       got = await this.brain.insertLease(row);
-      if (!got) return this.acquire(); // lost an insert race: re-read and compete on epoch
+      if (!got) {
+        if (attempt >= 3) throw new LeaseHeldElsewhere('race', 1); // lost the insert race too often: stop and let systemd retry
+        return this.acquire(attempt + 1); // lost an insert race: re-read and compete on epoch
+      }
     } else {
       const expired = Date.parse(current.expires_at) <= now;
       // Same holder (this host's program restarting under systemd) may take over a live lease;

@@ -433,6 +433,7 @@ export class RelayCore {
     const e = this.d.book.get(provisionalId);
     if (e) {
       e.heldTask = task;
+      e.heldFromAgent = this.agentByBotId.get(ctx.authorId) ?? null;
       e.nextBrainRetryAt = this.now() + (slow ? SLOW_BRAIN_RETRY_MS : BRAIN_RETRY_MS);
     }
     this.d.dedup.accept(idemKey, normHash, provisionalId, this.now());
@@ -474,7 +475,7 @@ export class RelayCore {
           await this.d.adapter.fire({
             task,
             epoch: this.d.lease.currentEpoch(),
-            meta: { taskHash: e.taskHash, normHash: e.normHash, idemKey: e.idemKey, fromAgent: 'CAO-RELAY', channelId: e.channelId, messageTs: null, permalink: null },
+            meta: { taskHash: e.taskHash, normHash: e.normHash, idemKey: e.idemKey, fromAgent: e.heldFromAgent ?? 'CAO-RELAY', channelId: e.channelId, messageTs: null, permalink: null },
           })
         ).runId;
       const provisionalId = e.id;

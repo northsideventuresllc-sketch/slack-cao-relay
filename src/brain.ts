@@ -174,6 +174,8 @@ export interface BrainApi {
   renewLease(name: string, epoch: number, heartbeatAt: string, expiresAt: string): Promise<LeaseRow | null>; // null = epoch is stale
   upsertHeartbeat(agent: string, at: string): Promise<void>;
   getHeartbeat(agent: string): Promise<HeartbeatRow | null>;
+  /** Push every pointer state the brain has not yet confirmed (the ledger is written first; the brain follows). Returns rows synced. */
+  syncPointers?(): Promise<number>;
 }
 
 export class BrainError extends Error {
@@ -187,7 +189,7 @@ export class BrainError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// The aosRelay client: the four wrappers, nothing else
+// The aosRelay client: select, upsert and update over the wrappers (aos_relay_delete exists in the SQL; this relay does not call it)
 // ---------------------------------------------------------------------------
 
 export type RelayTable = 'cao_relay_lease' | 'cao_heartbeat' | 'relay_pointers';
@@ -201,7 +203,6 @@ export interface AosRelayApi {
   upsert(table: RelayTable, row: Record<string, unknown>, conflict: string, onConflict?: 'update' | 'nothing'): Promise<unknown[]>;
   /** Compare-and-swap: returns the number of rows changed. */
   update(table: RelayTable, filter: Filter, patch: Record<string, unknown>): Promise<number>;
-  remove(table: RelayTable, filter: Filter): Promise<number>;
 }
 
 export interface HttpAosRelayOptions {
@@ -261,15 +262,11 @@ export class HttpAosRelay implements AosRelayApi {
   }
 
   async upsert(table: RelayTable, row: Record<string, unknown>, conflict: string, onConflict: 'update' | 'nothing' = 'update'): Promise<unknown[]> {
-    return HttpAosRelay.arr(await this.rpc('aos_relay_upsert', { p_table: table, p_row: row, p_conflict: conflict, ...(onConflict === 'nothing' ? { p_on_conflict: 'nothing' } : {}) }));
+    return HttpAosRelay.arr(await this.rpc('aos_relay_upsert', { p_table: table, p_row: row, p_conflict: conflict, p_on_conflict: onConflict }));
   }
 
   async update(table: RelayTable, filter: Filter, patch: Record<string, unknown>): Promise<number> {
     return HttpAosRelay.count(await this.rpc('aos_relay_update', { p_table: table, p_filter: filter, p_patch: patch }));
-  }
-
-  async remove(table: RelayTable, filter: Filter): Promise<number> {
-    return HttpAosRelay.count(await this.rpc('aos_relay_delete', { p_table: table, p_filter: filter }));
   }
 }
 
@@ -316,12 +313,14 @@ export interface DirectBrainOptions {
   directory?: PointerDirectory; // needed for fire rows (pointers); not for leases and heartbeats
   clock?: () => number;
   randomHex?: () => string;
+  onNoPointer?: (ids: { fireId: string; reason: string }) => void; // a run that cannot have a pointer row (alert, ids only)
 }
 
 export class DirectBrain implements BrainApi {
   private readonly relay: AosRelayApi;
   private readonly ledger: FireLedger | null;
   private readonly clock: () => number;
+  private readonly held = new Map<string, LeaseRow>(); // the lease rows this relay took (renew needs no re-read)
 
   constructor(private readonly opts: DirectBrainOptions) {
     if (opts.relay) this.relay = opts.relay;
@@ -360,37 +359,75 @@ export class DirectBrain implements BrainApi {
 
   // ---- pointers ------------------------------------------------------------
 
-  /** The pointer a run would have, or null when it cannot have one (no CAO sender, or a CAO writing to itself). */
+  /** The pointer a run would have, or null when it cannot have one (unknown sender or target, or a CAO writing to itself). */
   private pointerFor(rec: LedgerRec): Record<string, unknown> | null {
+    return this.pointerOrWhy(rec).pointer;
+  }
+
+  private pointerOrWhy(rec: LedgerRec): { pointer: Record<string, unknown> | null; why: string } {
     const d = this.dir();
     const to = this.keyForAgent(rec.to_agent);
     const from = this.keyForAgent(rec.from_agent);
-    if (!to || !from || from === to) return null; // the table needs two different CAOs
+    if (!to) return { pointer: null, why: 'unknown-target' };
+    if (!from) return { pointer: null, why: 'sender-not-a-cao' };
+    if (from === to) return { pointer: null, why: 'same-cao' }; // the table needs two different CAOs
     const ev = rec.evidence;
     const channelId = ev.slack?.channel_id ?? d.caos.find((c) => c.key === to)?.channelId ?? d.caoBotsChannelId;
     const channelName = channelId === d.caoBotsChannelId ? 'cao-bots' : (d.caos.find((c) => c.channelId === channelId)?.channelName ?? d.caos.find((c) => c.key === to)?.channelName ?? 'cao-bots');
     return {
-      row_id: rec.id,
-      from_cao: from,
-      to_cao: to,
-      slack_channel: channelName,
-      slack_link: ev.slack?.permalink ?? slackLinkFor(d.slackDomain, channelId, ev.slack?.ts ?? null),
-      fire_id: rec.id,
-      state: pointerStateFor(rec.status),
+      why: '',
+      pointer: {
+        row_id: rec.id,
+        from_cao: from,
+        to_cao: to,
+        slack_channel: channelName,
+        slack_link: ev.slack?.permalink ?? slackLinkFor(d.slackDomain, channelId, ev.slack?.ts ?? null),
+        fire_id: rec.id, // shortcut: the run id is the fire id; the wake id of an automatic start is not a separate value in this relay
+        state: pointerStateFor(rec.status),
+      },
     };
+  }
+
+  /** Tell the owner (an alert with ids only) when a run has no pointer, unless the sender is plainly not a CAO (a person's start). */
+  private noPointer(rec: LedgerRec): void {
+    const { pointer, why } = this.pointerOrWhy(rec);
+    if (pointer || why === 'sender-not-a-cao') return;
+    this.opts.onNoPointer?.({ fireId: rec.id, reason: why });
   }
 
   private async writePointer(rec: LedgerRec): Promise<void> {
     const p = this.pointerFor(rec);
-    if (!p) return;
+    if (!p) return this.noPointer(rec);
     await this.relay.upsert('relay_pointers', p, 'row_id');
   }
 
-  /** Move a pointer to the state of `rec.status`; a pointer that is missing is written whole. */
+  /** Move a pointer to the state of `rec.status`; a pointer that is missing is written whole. updated_at is the database's (trigger). */
   private async setPointerState(rec: LedgerRec): Promise<void> {
-    if (!this.pointerFor(rec)) return;
-    const n = await this.relay.update('relay_pointers', { row_id: rec.id }, { state: pointerStateFor(rec.status), updated_at: new Date(this.clock()).toISOString() });
+    if (!this.pointerFor(rec)) return this.noPointer(rec);
+    const n = await this.relay.update('relay_pointers', { row_id: rec.id }, { state: pointerStateFor(rec.status) });
     if (n === 0) await this.writePointer(rec);
+  }
+
+  /** Mark a ledger record synced only if its coarse state is still the one that was pushed. */
+  private markSynced(id: string, pushedState: PointerState): void {
+    const cur = this.ledger?.get(id);
+    if (cur && pointerStateFor(cur.status) === pushedState && !cur.pointer_synced) this.ledger?.put({ ...cur, pointer_synced: true });
+  }
+
+  async syncPointers(): Promise<number> {
+    if (!this.ledger) return 0;
+    let n = 0;
+    for (const rec of this.ledger.list()) {
+      if (rec.pointer_synced) continue;
+      try {
+        await this.setPointerState(rec);
+      } catch {
+        return n; // the brain is still down: the next minute tries again
+      }
+      this.markSynced(rec.id, pointerStateFor(rec.status));
+      n++;
+    }
+    return n;
   }
 
   private toFireRow(rec: LedgerRec): FireRow {
@@ -446,9 +483,8 @@ export class DirectBrain implements BrainApi {
     };
     this.ledger.put(rec); // local first: a pointer write that times out is adopted by the retry (findFireRowByIdem)
     await this.writePointer(rec);
-    rec.pointer_synced = true;
-    this.ledger.put(rec);
-    return this.toFireRow(rec);
+    this.markSynced(id, pointerStateFor(rec.status));
+    return this.toFireRow({ ...rec, pointer_synced: true });
   }
 
   async getFireRow(id: string): Promise<FireRow | null> {
@@ -465,9 +501,11 @@ export class DirectBrain implements BrainApi {
     const to = this.keyForAgent(toAgent);
     if (to) {
       // Pointers another relay wrote for this CAO (the Muse program's view of its siblings): one read per state.
+      // shortcut: the select wrapper has no ORDER BY, so the read is bounded by a 30-day created_at window and a 500-row cap.
+      const since = new Date(this.clock() - 30 * 24 * 3600_000).toISOString();
       const states = [...new Set(statuses.map(pointerStateFor))];
       for (const state of states) {
-        const ps = this.rows(await this.relay.select('relay_pointers', { to_cao: to, state }, 500), PointerRowSchema);
+        const ps = this.rows(await this.relay.select('relay_pointers', { to_cao: to, state, created_at: { gte: since } }, 500), PointerRowSchema);
         for (const p of ps) {
           if (ownIds.has(p.row_id)) continue;
           const row = this.fromPointer(p);
@@ -483,8 +521,7 @@ export class DirectBrain implements BrainApi {
     if (!rec) return null;
     if (!rec.pointer_synced) {
       await this.writePointer(rec);
-      rec.pointer_synced = true;
-      this.ledger?.put(rec);
+      this.markSynced(rec.id, pointerStateFor(rec.status));
     }
     return this.toFireRow(rec);
   }
@@ -497,12 +534,19 @@ export class DirectBrain implements BrainApi {
     const next: LedgerRec = { ...rec, evidence: patch.evidence ?? rec.evidence };
     if (patch.status !== undefined) next.status = patch.status;
     if (patch.completed_at !== undefined) next.completed_at = patch.completed_at;
-    // Write the brain first: if it is down the ledger stays as it was and the caller sees the failure.
-    if (pointerStateFor(next.status) !== pointerStateFor(rec.status) || !rec.pointer_synced) {
-      await this.setPointerState(next);
-      next.pointer_synced = true;
-    }
+    // The ledger first, with the pointer marked unsynced; the brain follows. A brain that is down never loses the state:
+    // syncPointers() pushes it at start-up and every minute.
+    const pointerChanged = pointerStateFor(next.status) !== pointerStateFor(rec.status) || !rec.pointer_synced;
+    if (pointerChanged) next.pointer_synced = false;
     this.ledger?.put(next);
+    if (pointerChanged) {
+      try {
+        await this.setPointerState(next);
+        this.markSynced(id, pointerStateFor(next.status));
+      } catch {
+        // left unsynced on purpose
+      }
+    }
     return this.toFireRow(next);
   }
 
@@ -515,7 +559,9 @@ export class DirectBrain implements BrainApi {
   /** Insert-do-nothing: null when a row for this name already exists (the caller re-reads and competes on epoch). */
   async insertLease(row: LeaseRow): Promise<LeaseRow | null> {
     const got = await this.relay.upsert('cao_relay_lease', { ...row }, 'name', 'nothing');
-    return this.rows(got, LeaseRowSchema)[0] ?? null;
+    const taken = this.rows(got, LeaseRowSchema)[0] ?? null;
+    if (taken) this.held.set(taken.name, taken);
+    return taken;
   }
 
   /** Compare-and-swap on name + epoch; `next.epoch` is the old epoch + 1. Rows changed = 1 means this relay holds it. */
@@ -527,13 +573,18 @@ export class DirectBrain implements BrainApi {
       heartbeat_at: next.heartbeat_at,
       expires_at: next.expires_at,
     });
-    return n === 1 ? { ...next } : null;
+    if (n !== 1) return null;
+    this.held.set(name, { ...next });
+    return { ...next };
   }
 
   async renewLease(name: string, epoch: number, heartbeatAt: string, expiresAt: string): Promise<LeaseRow | null> {
     const n = await this.relay.update('cao_relay_lease', { name, epoch }, { heartbeat_at: heartbeatAt, expires_at: expiresAt });
     if (n !== 1) return null;
-    return this.getLease(name);
+    const known = this.held.get(name);
+    const row = known && known.epoch === epoch ? { ...known, heartbeat_at: heartbeatAt, expires_at: expiresAt } : await this.getLease(name);
+    if (row) this.held.set(name, row);
+    return row;
   }
 
   async upsertHeartbeat(agent: string, at: string): Promise<void> {

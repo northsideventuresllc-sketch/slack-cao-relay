@@ -35,6 +35,7 @@ export interface FireEntry {
   lostNotified: boolean;
   // memory only — never written to disk:
   heldTask: string | null;
+  heldFromAgent: string | null; // the requesting CAO's agent name, kept with the held text so the retry writes the right pointer
   nextBrainRetryAt: number | null;
   noticesSent: Set<string>;
 }
@@ -70,6 +71,7 @@ export class FireBook {
         lockCleared: false,
         lostNotified: false,
         heldTask: null,
+        heldFromAgent: null,
         nextBrainRetryAt: null,
         noticesSent: new Set(),
       };
@@ -88,6 +90,7 @@ export class FireBook {
           e.id = r.brainId;
           e.provisional = false;
           e.heldTask = null;
+          e.heldFromAgent = null;
           e.nextBrainRetryAt = null;
           this.byId.set(e.id, e);
         }

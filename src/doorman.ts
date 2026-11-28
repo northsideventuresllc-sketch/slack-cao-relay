@@ -17,13 +17,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
-import { IDENTITY_FOR_CAO, type CaoKey, type HarnessIdentity } from './config.js';
+import type { CaoKey, HarnessIdentity } from './config.js';
 
 export const DOORMAN_JOB = 'cao-relay';
 export const KEYCHAIN_SERVICE = 'nvg-doorman-identity';
 export const IDENTITY_CREDENTIAL = 'doorman-identity';
 
-export type DoormanReply = { answer: 'given'; value: string } | { answer: 'refused'; why: string };
+/** `refused` = the doorman answered no (the relay stays down). `unreachable` = no answer (network error, 5xx, not JSON): the relay retries. */
+export type DoormanReply = { answer: 'given'; value: string } | { answer: 'refused'; why: string } | { answer: 'unreachable'; why: string };
 
 export interface DoormanApi {
   ask(req: { agent: string; secret: string; job: string; run: string }): Promise<DoormanReply>;
@@ -80,7 +81,11 @@ export interface HttpDoormanOptions {
 }
 
 export class HttpDoorman implements DoormanApi {
-  constructor(private readonly opts: HttpDoormanOptions) {}
+  private readonly dispatcher: ProxyAgent | undefined;
+
+  constructor(private readonly opts: HttpDoormanOptions) {
+    this.dispatcher = opts.httpsProxy ? new ProxyAgent(opts.httpsProxy) : undefined; // one agent for the life of the relay
+  }
 
   async ask(req: { agent: string; secret: string; job: string; run: string }): Promise<DoormanReply> {
     const o = this.opts;
@@ -91,20 +96,20 @@ export class HttpDoorman implements DoormanApi {
       signal: AbortSignal.timeout(o.timeoutMs ?? 10_000),
     };
     try {
-      const res = o.fetchImpl
-        ? await o.fetchImpl(o.url, init)
-        : await undiciFetch(o.url, { ...init, dispatcher: o.httpsProxy ? new ProxyAgent(o.httpsProxy) : undefined });
+      const res = o.fetchImpl ? await o.fetchImpl(o.url, init) : await undiciFetch(o.url, { ...init, dispatcher: this.dispatcher });
+      if (res.status >= 500) return { answer: 'unreachable', why: `doorman http ${res.status}` };
       let body: unknown;
       try {
         body = await res.json();
       } catch {
-        return { answer: 'refused', why: `doorman http ${res.status}` };
+        return { answer: 'unreachable', why: `doorman answered http ${res.status} without JSON` };
       }
       const b = body as { answer?: unknown; value?: unknown; why?: unknown };
-      if (b?.answer === 'given' && typeof b.value === 'string' && b.value.length > 0) return { answer: 'given', value: b.value };
-      return { answer: 'refused', why: typeof b?.why === 'string' ? b.why.slice(0, 200) : 'doorman refused' };
+      const value = typeof b?.value === 'string' ? b.value.trim() : '';
+      if (res.status >= 200 && res.status < 300 && b?.answer === 'given' && value.length > 0) return { answer: 'given', value };
+      return { answer: 'refused', why: typeof b?.why === 'string' ? b.why.slice(0, 200) : `doorman refused (http ${res.status})` };
     } catch {
-      return { answer: 'refused', why: 'doorman unreachable' };
+      return { answer: 'unreachable', why: 'doorman unreachable' };
     }
   }
 }
@@ -116,6 +121,13 @@ export class DoormanRefused extends Error {
   }
 }
 
+export class DoormanUnreachable extends Error {
+  constructor(readonly secretName: string, readonly why: string) {
+    super(`doorman unreachable for ${secretName}: ${why}`);
+    this.name = 'DoormanUnreachable';
+  }
+}
+
 /** Ask the doorman for this relay's bot and app tokens (two calls, its own names only). */
 export async function fetchRelayTokens(cao: CaoKey, doorman: DoormanApi, now: () => number = Date.now): Promise<{ botToken: string; appToken: string }> {
   const names = relaySecretNames(cao);
@@ -123,12 +135,9 @@ export async function fetchRelayTokens(cao: CaoKey, doorman: DoormanApi, now: ()
   const got: Record<'bot' | 'app', string> = { bot: '', app: '' };
   for (const kind of ['bot', 'app'] as const) {
     const r = await doorman.ask({ agent: cao, secret: names[kind], job: DOORMAN_JOB, run });
+    if (r.answer === 'unreachable') throw new DoormanUnreachable(names[kind], r.why);
     if (r.answer !== 'given') throw new DoormanRefused(names[kind], r.why);
     got[kind] = r.value;
   }
   return { botToken: got.bot, appToken: got.app };
-}
-
-export function identityFor(cao: CaoKey): HarnessIdentity {
-  return IDENTITY_FOR_CAO[cao];
 }

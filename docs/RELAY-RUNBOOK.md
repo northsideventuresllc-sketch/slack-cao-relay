@@ -74,14 +74,17 @@ Fill these in. Do not guess them. Every value below either has its real value he
      4. Check it by hand once: `sudo VAULT_TOKEN_FILE=/etc/cao-relay/vault-token <command> cao-relay-muse > /dev/null && echo ok`. Never print the value.
 
      The fetch hook refuses to run (exit 78) while `VAULT_GET` is a placeholder.
-4. **Slack token labels — named** (C2-FU-4). Store each token in the Secure Vault under these labels (already in `fetch-keys.conf.example`):
+4. **Doorman identity tokens and Slack tokens** (v4.0). No Slack token is stored on the host or in the Secure Vault labels for the relay: each relay asks the doorman for its own bot and app token at start (section 1a). What each host needs instead is that relay's own identity token, created by JB (the value is never in this repo and no agent reads it):
 
-   | Label | Value comes from (each app's settings page, api.slack.com/apps) |
-   |---|---|
-   | `cto-relay-<cao>-slack-app` | Basic Information → App-Level Tokens → "<App name> Socket Token" (`connections:write`) |
-   | `cto-relay-<cao>-slack-bot` | OAuth & Permissions → Bot User OAuth Token |
+   | Relay | Identity | VM file (root:root, mode 0400) | Mini keychain (the `cao-relay-<cao>` user's login keychain) |
+   |---|---|---|---|
+   | `muse` | `muse` | `/etc/credstore/doorman-identity-muse` | service `nvg-doorman-identity`, account `muse` |
+   | `claude` | `claude_code` | `/etc/credstore/doorman-identity-claude_code` | service `nvg-doorman-identity`, account `claude_code` |
+   | `gemini` | `gemini_antigravity` | `/etc/credstore/doorman-identity-gemini_antigravity` | service `nvg-doorman-identity`, account `gemini_antigravity` |
+   | `axon` | `hermes` | `/etc/credstore/doorman-identity-hermes` | service `nvg-doorman-identity`, account `hermes` |
 
-   `<cao>` is one of `muse`, `claude`, `gemini`, `axon`. The brain key label is `cto-relay-muse` (stored, Phase 1).
+   - **Create the four VM files before the first start:** `sudo install -d -m 0755 /etc/credstore`, then for each, write the value from the doorman's identity issue step (stdin, never argv) and `sudo chown root:root` and `sudo chmod 0400` the file. Each unit loads only its own file with `LoadCredential=doorman-identity:/etc/credstore/doorman-identity-<identity>`; a missing file makes that unit fail to start, and `deploy.sh` warns about any file that is missing or has the wrong owner or mode.
+   - The doorman grants each identity only its own `CAO_RELAY_<NAME>_BOT_TOKEN` and `CAO_RELAY_<NAME>_APP_TOKEN` for job `cao-relay`. A refusal stops that relay only (exit 78); a doorman that does not answer is a retry (exit 1, every 30 s).
 5. **Vault deploy keys — named** (C2-FU-2, C2-FU-3). Owner: Muse CAO. Both are created on the vault repo, GitHub → Settings → Deploy keys.
 
    | Label | Type | Used by | How it reaches the host |
@@ -94,6 +97,8 @@ Fill these in. Do not guess them. Every value below either has its real value he
    **GitHub host keys:** `deploy.sh` pins them in `/etc/cao-relay/known_hosts`. Check the printed fingerprints against GitHub's published "SSH key fingerprints" page.
 6. **`/etc/cao-relay/relay.env`:**
    - `SUPABASE_URL=<SUPABASE_URL>`: the NI Brain REST base for project `uaztknnipdxxptrmlxlb`. Read it from the Supabase dashboard → Project Settings → API.
+   - `CAO_RELAY_DOORMAN_URL=<DOORMAN_URL>` (or `NVG_DOORMAN_URL`): the doorman endpoint. Required: every relay exits 78 without it.
+   - `SUPABASE_PUBLISHABLE_KEY=<SUPABASE_PUBLISHABLE_KEY>`: the publishable (anon) key from the same API page, sent to the doorman as `Authorization: Bearer` and `apikey`. Required. It is public by design; never put the service_role key here.
    - `CAO_RELAY_VAULT_WEB_BASE` and `CAO_RELAY_VAULT_REPO_URL` are prefilled from Appendix A; verify them.
 7. **`/etc/cao-relay/offhost.env`:**
    - `VAULT_MIRROR_PATH` = `_AI/CAO Loop/Mirror` and `VAULT_ARCHIVE_PATH` = `_AI/CAO Loop/Brain Archive` (C1-FU-2). These are new folders for the loop; Muse CAO may rename them.
@@ -192,9 +197,7 @@ Labels only; never values.
 
 | File in tmpfs | Who | Vault label |
 |---|---|---|
-| `slack-app-token` | each program | `cto-relay-<cao>-slack-app` (Socket Mode, `connections:write`) |
-| `slack-bot-token` | each program | `cto-relay-<cao>-slack-bot` (10 bot scopes incl. `commands`) |
-| `brain-key` | Muse program + `cao-heartbeat` | `cao-relay-muse` |
+| `brain-key` | each program + `cao-heartbeat` (the one shared brain key) | `cto-relay-muse` |
 | `vault-read-key` | each program | `cto-relay-vault-read` (read-only vault deploy key) |
 | `vault-write-key` | the nightly off-host job only | `cto-relay-vault-write` (vault deploy key with write access) |
 
@@ -357,15 +360,15 @@ It is a 1-minute cron on the mini:
 ```
 * * * * * /opt/cao-relay/deploy/scripts/mini-poller.sh
 ```
-It runs as user `cao-relay-muse`. The secrets come from that user's keychain and reach the poller on stdin only.
+It runs as user `cao-relay-muse`. The brain key comes from that user's keychain and reaches the poller on stdin only; the Slack read token for the fallback sweep comes from the doorman (identity `muse`, keychain item `nvg-doorman-identity`).
 - **What it checks:** it curls `http://198.19.0.2:9101..9104/health` and reads the `cao_heartbeat` row for MUSE.
 - **Offline:** the heartbeat is older than 30 min, or the brain is down (fail-safe).
 - **Alert at 45 min:** a line in `/var/lib/cao-relay/mini/alerts.jsonl`, which Claude CAO reads at the morning check-in.
 - **Failover detected:** the VM Muse health fails 3 consecutive polls AND Muse CAO is offline. The poller writes the failover alert for `Claude CAO` once.
 - **Dead-owner sweep (R7-NEW-4):** while the Muse program is down, the poller runs the D5 §6 sweep every 6 h with the **reduced** still-active test: prongs (b) + (c) only. Prong (a) is skipped, because the mini has no adapter to probe and no v1 adapter has a live probe anyway.
-  - (b) reads the last 24 h of Slack history in the four CAO channels from `config/registry.json`. It uses the Muse CAO bot token (`channels:history` / `groups:history`) from the `cao-relay-muse` login keychain, keychain item `cto-relay-muse-slack-bot`.
+  - (b) reads the last 24 h of Slack history in the four CAO channels from `config/registry.json`. It uses the Muse CAO bot token (`channels:history` / `groups:history`), asked from the doorman with the `muse` identity at the time of the sweep. No Slack token is kept in the keychain or written to disk.
 
-**Mini keychain items** (C1-FU-3) are created at failover setup in each `cao-relay-<cao>` macOS user's login keychain, with the same names as the vault labels: `cto-relay-<cao>-slack-app`, `cto-relay-<cao>-slack-bot`, and, Muse only, `cto-relay-muse` (the brain key).
+**Mini keychain items** (C1-FU-3) are created at failover setup in each `cao-relay-<cao>` macOS user's login keychain, with the same names as the vault labels: `cto-relay-muse` (the one shared brain key, in every relay's keychain) and `nvg-doorman-identity` (account = that relay's identity). `mini-run.sh` copies only the brain key to a private temp dir; it never touches Slack tokens.
   - (c) reads `evidence.relay.last_progress_at` from the **live** brain rows, not from the up-to-24-hours-stale off-host run-log copy.
   - Findings go to `Claude CAO`, labelled "reduced test: prongs b+c". The fallback never posts in Slack.
 - **The poller's own liveness (R7-NEW-5):** every run writes a `cao_heartbeat` row for agent `MINI-POLLER`. The VM Muse program checks it every minute. If it is stale for over 5 min, it alerts and posts "The mini poller has stopped answering…" in #cao-bots, once per incident, then "The mini poller is back." on recovery.

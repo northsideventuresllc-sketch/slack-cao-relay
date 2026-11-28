@@ -1,3 +1,4 @@
+// shortcut: this whole file is a temporary compatibility shim; delete it (and its test) once the cutover has been quiet for a week.
 // CTO -> CAO backward compatibility for environment variables. Until the cutover (docs/CAO-CUTOVER.md)
 // the live host may still set CTO_RELAY_*. New code reads CAO_RELAY_* first, then falls back.
 // The old `axon-hermes` relay key is read as `axon`. Remove this file after the cutover is verified.

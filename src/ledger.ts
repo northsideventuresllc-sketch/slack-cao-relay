@@ -3,7 +3,7 @@
 // (atomic rewrite of one JSON file), per relay. It holds ids, hashes, links and states only: never message
 // text. The brain keeps only the pointer row for each run (see brain.ts); message text stays in Slack.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync } from 'node:fs';
 import type { RelayEvidence } from './brain.js';
 import { writeFileAtomicSync } from './util/durable.js';
 
@@ -22,6 +22,8 @@ export interface LedgerRec {
 
 export class FireLedger {
   private readonly recs = new Map<string, LedgerRec>();
+  /** Set when the file on disk could not be read: the path it was moved to (the relay raises an alert). */
+  quarantinedTo: string | null = null;
 
   /** `path` null = in memory only (tests, one-shot tools). */
   constructor(private readonly path: string | null) {
@@ -30,7 +32,15 @@ export class FireLedger {
         const raw: unknown = JSON.parse(readFileSync(path, 'utf8'));
         if (Array.isArray(raw)) for (const r of raw as LedgerRec[]) if (r && typeof r.id === 'string') this.recs.set(r.id, r);
       } catch {
-        // a torn file: start empty; the journal and the pointer rows still hold the runs
+        // a torn file: move it aside (never overwrite it) and start empty; the journal and the pointer rows still hold the runs
+        const aside = `${path}.corrupt-${Date.now()}`;
+        try {
+          renameSync(path, aside);
+          this.quarantinedTo = aside;
+        } catch {
+          this.quarantinedTo = path;
+        }
+        this.recs.clear();
       }
     }
   }

@@ -26,6 +26,18 @@ begin
   end if;
 end $$;
 
+-- The relay program for AXON CAO is now named 'axon' (it was 'axon-hermes'). The lease row name and its check follow.
+-- BEFORE applying, run this read-only and keep the answer (the live constraint text must match what is replaced here):
+--   select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid = 'aos.cao_relay_lease'::regclass;
+-- Idempotent: the constraint comes off, the row is renamed (only if no 'axon' row exists yet), the constraint goes back on with the new name list.
+do $$
+begin
+  alter table aos.cao_relay_lease drop constraint if exists cao_relay_lease_name_known;
+  update aos.cao_relay_lease set name = 'axon'
+   where name = 'axon-hermes' and not exists (select 1 from aos.cao_relay_lease where name = 'axon');
+  alter table aos.cao_relay_lease add constraint cao_relay_lease_name_known check (name in ('muse', 'claude', 'gemini', 'axon'));
+end $$;
+
 -- Pointer-only: where a relayed message lives in Slack and what state it is in. No message text column.
 create table if not exists aos.relay_pointers (
   row_id text primary key,                       -- made by the writer: relay-<yyyymmddhhmmss>-<rand>
@@ -38,6 +50,13 @@ create table if not exists aos.relay_pointers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (from_cao <> to_cao));
+create index if not exists relay_pointers_to_state_idx on aos.relay_pointers (to_cao, state);
+-- updated_at is kept by the database, not trusted from the caller.
+create or replace function aos._relay_pointers_touch() returns trigger language plpgsql set search_path = '' as $$
+begin new.updated_at = now(); return new; end $$;
+drop trigger if exists relay_pointers_touch on aos.relay_pointers;
+create trigger relay_pointers_touch before update on aos.relay_pointers
+  for each row execute function aos._relay_pointers_touch();
 select aos._lock('aos.relay_pointers');
 select aos._lock('aos.cao_relay_lease');
 select aos._lock('aos.cao_heartbeat');
@@ -47,7 +66,7 @@ select aos._lock('aos.cao_heartbeat');
 -- same pattern as 005 and 011). service_role only. Allow-listed to the three relay tables.
 -- Column-agnostic on purpose: columns are checked against the real table at call time and every
 -- value is cast to the column's own type, so the wrappers fit the tables whatever their columns are.
--- A filter is a json object: {"col": value} means equals; {"col": {"lt": v}} also takes ne, lte, gt, gte.
+-- A filter is a json object: {"col": value} means equals; {"col": {"lt": v}} also takes eq, ne, lte, gt, gte. A null value is allowed only with eq or ne.
 -- ---------------------------------------------------------------------------------------------
 create or replace function aos._relay_check(p_table text, p_cols text[])
 returns void language plpgsql set search_path = '' as $$
@@ -77,6 +96,7 @@ begin
       if sym is null then raise exception 'unknown operator'; end if;
     else sym := '='; val := v; end if;
     if jsonb_typeof(val) = 'null' then
+      if sym not in ('=', '<>') then raise exception 'null is allowed only with eq or ne'; end if;
       parts := parts || format('%I %s null', k, case sym when '=' then 'is' else 'is not' end);
     else
       parts := parts || format('%I %s %L::%s', k, sym, val #>> '{}', typ);
@@ -94,17 +114,22 @@ begin
   return out;
 end $$;
 
-create or replace function public.aos_relay_upsert(p_table text, p_row jsonb, p_conflict text)
+-- p_on_conflict: 'update' (default) merges the row into the existing one; 'nothing' leaves an existing row alone and
+-- returns no row (the relay's insertLease: null means another relay took the row first).
+drop function if exists public.aos_relay_upsert(text, jsonb, text);
+create or replace function public.aos_relay_upsert(p_table text, p_row jsonb, p_conflict text, p_on_conflict text default 'update')
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare cols text[]; collist text; setlist text; out jsonb;
+declare cols text[]; collist text; setlist text; action text; out jsonb;
 begin
   if p_row is null or jsonb_typeof(p_row) <> 'object' then raise exception 'row must be an object'; end if;
+  if coalesce(p_on_conflict, 'update') not in ('update', 'nothing') then raise exception 'p_on_conflict must be update or nothing'; end if;
   cols := array(select jsonb_object_keys(p_row));
   perform aos._relay_check(p_table, cols || p_conflict);
   collist := (select string_agg(format('%I', c), ', ') from unnest(cols) c);
   setlist := (select string_agg(format('%I = excluded.%I', c, c), ', ') from unnest(cols) c where c <> p_conflict);
+  action := case when coalesce(p_on_conflict, 'update') = 'nothing' or setlist is null then 'nothing' else 'update set ' || setlist end;
   execute format('with ins as (insert into aos.%1$I (%2$s) select %2$s from jsonb_populate_record(null::aos.%1$I, $1) on conflict (%3$I) do %4$s returning *) select coalesce(jsonb_agg(to_jsonb(ins)), ''[]''::jsonb) from ins',
-    p_table, collist, p_conflict, case when setlist is null then 'nothing' else 'update set ' || setlist end) into out using p_row;
+    p_table, collist, p_conflict, action) into out using p_row;
   return out;
 end $$;
 
@@ -132,7 +157,7 @@ begin
 end $$;
 
 revoke all on function aos._relay_check(text, text[]), aos._relay_where(text, jsonb) from public, anon, authenticated;
-revoke all on function public.aos_relay_select(text, jsonb, int), public.aos_relay_upsert(text, jsonb, text),
+revoke all on function public.aos_relay_select(text, jsonb, int), public.aos_relay_upsert(text, jsonb, text, text),
   public.aos_relay_update(text, jsonb, jsonb), public.aos_relay_delete(text, jsonb) from public, anon, authenticated;
-grant execute on function public.aos_relay_select(text, jsonb, int), public.aos_relay_upsert(text, jsonb, text),
+grant execute on function public.aos_relay_select(text, jsonb, int), public.aos_relay_upsert(text, jsonb, text, text),
   public.aos_relay_update(text, jsonb, jsonb), public.aos_relay_delete(text, jsonb) to service_role;

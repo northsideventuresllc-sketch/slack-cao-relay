@@ -111,7 +111,7 @@ export interface RelayConfig {
   httpsProxy: string | null;
   postQueuePath: string | null; // Muse only
   mirrorDir: string | null; // Muse only
-  archiveDir: string | null; // Muse only: brain rows past 90 days, filed into the vault nightly (R7-FU-12)
+  archiveDir: string | null; // every relay: its own brain rows past 90 days, filed into the vault nightly (R7-FU-12)
   healthBind: string[];
   supabaseUrl: string | null; // every relay reaches the brain itself
   credentialsDir: string | null; // brain-key and the vault deploy key (tmpfs)
@@ -175,7 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     httpsProxy: e.CAO_RELAY_HTTPS_PROXY ?? null,
     postQueuePath: isMuse ? (e.CAO_RELAY_POST_QUEUE ?? '/var/lib/cao-relay/muse/post-queue.jsonl') : null,
     mirrorDir: isMuse ? (e.CAO_RELAY_MIRROR_DIR ?? join(stateDir, 'mirror')) : null,
-    archiveDir: isMuse ? (e.CAO_RELAY_ARCHIVE_DIR ?? join(stateDir, 'archive')) : null,
+    archiveDir: e.CAO_RELAY_ARCHIVE_DIR ?? join(stateDir, 'archive'),
     healthBind: e.CAO_RELAY_HEALTH_BIND ? e.CAO_RELAY_HEALTH_BIND.split(',').map((s) => s.trim()) : registry.healthBind,
     supabaseUrl: e.SUPABASE_URL ?? null,
     // The ExecStartPre tmpfs dir wins (fresh fetch on every start, D7); $CREDENTIALS_DIRECTORY is the fallback.

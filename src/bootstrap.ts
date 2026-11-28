@@ -1,14 +1,15 @@
 // Start-up of ONE relay, in the order that keeps it independent and bot-only:
-//   1. its Slack tokens from the doorman, with its own identity (a refusal stops this relay only);
-//   2. the token-shape guard (bot token xoxb-, app token xapp-; a user token xoxp- is refused);
-//   3. the brain answers (fail-closed), and this relay takes its own lease;
+//   1. the brain answers (fail-closed), and this relay takes its own lease;
+//   2. its Slack tokens from the doorman, with its own identity (a refusal stops this relay only; a doorman
+//      that does not answer is a retry, not a refusal);
+//   3. the token-shape guard (bot token xoxb-, app token xapp-; a user token xoxp- is refused);
 //   4. auth.test with the bot token names a bot_id and this CAO's bot user.
 // No step reads another relay's heartbeat or waits for another program: each relay starts, holds its own
 // lease and posts on its own.
 
 import type { BrainApi } from './brain.js';
 import type { RelayConfig } from './config.js';
-import { DoormanRefused, fetchRelayTokens, type DoormanApi } from './doorman.js';
+import { DoormanRefused, DoormanUnreachable, fetchRelayTokens, type DoormanApi } from './doorman.js';
 import { LeaseHeldElsewhere, LeaseManager } from './lease.js';
 import { EXIT_STAY_DOWN } from './channel/slack.js';
 import { NotABotError, TokenGuardError, assertSlackTokenShapes } from './slackguard.js';
@@ -46,26 +47,6 @@ export interface Bootstrapped<S extends SlackProbe> {
 export async function bootstrapRelay<S extends SlackProbe>(cfg: RelayConfig, deps: BootstrapDeps<S>): Promise<Bootstrapped<S>> {
   const cao = cfg.cao;
 
-  let tokens: { botToken: string; appToken: string };
-  try {
-    tokens = await fetchRelayTokens(cao.key, deps.doorman, deps.clock);
-  } catch (err) {
-    if (err instanceof DoormanRefused) {
-      deps.log.error('doorman refused this relay', { cao: cao.key, secret: err.secretName, why: err.why }); // name and reason, never a value
-      throw new Fatal(EXIT_STAY_DOWN, `doorman refused ${err.secretName} (this relay stays down; the others are not affected)`);
-    }
-    throw new Fatal(EXIT_STAY_DOWN, 'doorman call failed');
-  }
-  try {
-    assertSlackTokenShapes(tokens.botToken, tokens.appToken);
-  } catch (err) {
-    if (err instanceof TokenGuardError) {
-      deps.log.error('slack token refused', { cao: cao.key, which: err.which, shape: err.shape }); // shape only
-      throw new Fatal(EXIT_STAY_DOWN, `${err.which} token has the wrong shape (${err.shape}); posting is bot-token-only`);
-    }
-    throw err;
-  }
-
   const brain = deps.makeBrain();
   try {
     await brain.ping();
@@ -81,10 +62,37 @@ export async function bootstrapRelay<S extends SlackProbe>(cfg: RelayConfig, dep
     throw new Fatal(EXIT_RETRY, 'lease acquisition failed (fail-closed)');
   }
 
+  let tokens: { botToken: string; appToken: string };
+  try {
+    tokens = await fetchRelayTokens(cao.key, deps.doorman, deps.clock);
+  } catch (err) {
+    lease.stop();
+    if (err instanceof DoormanRefused) {
+      deps.log.error('doorman refused this relay', { cao: cao.key, secret: err.secretName, why: err.why }); // name and reason, never a value
+      throw new Fatal(EXIT_STAY_DOWN, `doorman refused ${err.secretName} (this relay stays down; the others are not affected)`);
+    }
+    if (err instanceof DoormanUnreachable) {
+      deps.log.warn('doorman did not answer; will retry', { cao: cao.key, secret: err.secretName, why: err.why });
+      throw new Fatal(EXIT_RETRY, 'doorman unreachable (retry)');
+    }
+    throw new Fatal(EXIT_STAY_DOWN, 'doorman call failed');
+  }
+  try {
+    assertSlackTokenShapes(tokens.botToken, tokens.appToken);
+  } catch (err) {
+    lease.stop();
+    if (err instanceof TokenGuardError) {
+      deps.log.error('slack token refused', { cao: cao.key, which: err.which, shape: err.shape }); // shape only
+      throw new Fatal(EXIT_STAY_DOWN, `${err.which} token has the wrong shape (${err.shape}); posting is bot-token-only`);
+    }
+    throw err;
+  }
+
   let slack: S;
   try {
     slack = deps.makeSlack(tokens);
   } catch (err) {
+    lease.stop();
     if (err instanceof TokenGuardError) throw new Fatal(EXIT_STAY_DOWN, `${err.which} token has the wrong shape (${err.shape})`);
     throw err;
   }

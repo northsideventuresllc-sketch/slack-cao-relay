@@ -4,7 +4,7 @@
 #
 #   cao-relay-mini-sync.sh            verify only: prints PROCEED or ABORT
 #   cao-relay-mini-sync.sh --start    verify, then start the four mini relays
-#   cao-relay-mini-sync.sh --retire-old  stop + remove the old com.northside.cto-relay.* launchd units (CTO -> CAO cutover)
+#   cao-relay-mini-sync.sh --retire-old  stop + remove the old com.northside.cto-relay.* and axon-hermes launchd units (CTO -> CAO cutover)
 #   cao-relay-mini-sync.sh --nightly  nightly pull (fast-forward to origin/main) + verify, no start
 #
 # Verification: the mini's repo commit + config hash must equal the expected
@@ -33,6 +33,13 @@ if [ "$mode" = "--retire-old" ]; then
     sudo launchctl bootout "system/com.northside.cto-relay.$c" 2>/dev/null || true
     [ -e "$old" ] && sudo rm -f "$old" && echo "removed $old"
   done
+  # The AXON relay used to be `axon-hermes`: an old process would fence on lease name axon-hermes and could post next to `axon`.
+  for label in com.northside.cto-relay.axon-hermes com.northside.cao-relay.axon-hermes; do
+    sudo launchctl bootout "system/$label" 2>/dev/null || true
+    [ -e "/Library/LaunchDaemons/$label.plist" ] && sudo rm -f "/Library/LaunchDaemons/$label.plist" && echo "removed /Library/LaunchDaemons/$label.plist"
+  done
+  [ -d /var/lib/cao-relay/axon-hermes ] && [ ! -e /var/lib/cao-relay/axon ] && sudo mv /var/lib/cao-relay/axon-hermes /var/lib/cao-relay/axon && echo "moved axon-hermes state -> axon"
+  [ -d /var/lib/cao-relay/axon-hermes ] && [ -e /var/lib/cao-relay/axon ] && echo "WARNING: both /var/lib/cao-relay/axon-hermes and /var/lib/cao-relay/axon exist; merge by hand, nothing was moved" >&2
   if [ -d /var/lib/cto-relay ] && [ ! -e /var/lib/cao-relay ]; then sudo mv /var/lib/cto-relay /var/lib/cao-relay && echo "moved /var/lib/cto-relay -> /var/lib/cao-relay"; fi
   echo "Old cto-relay launchd units retired. Install the new ones: copy deploy/launchd/com.northside.cao-relay.CAO.plist.template to /Library/LaunchDaemons/com.northside.cao-relay.<key>.plist (replace CAO_KEY)."
   exit 0

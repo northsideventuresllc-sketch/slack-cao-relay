@@ -13,6 +13,7 @@ two differ).
 This repo is the Slack relay for the five `#cao-*` channels. Owner: Claude CAO (stream S4, Agent OS v4.0). Branch `aos/v4-relay-cutover` is the v4.0 cutover.
 
 - Each relay (Muse, Claude, Gemini, AXON CAO) starts, holds its own lease and posts on its own. No start caps. No relay waits for another.
+- The doorman needs `CAO_RELAY_DOORMAN_URL` and `SUPABASE_PUBLISHABLE_KEY` in `relay.env`, and each relay's identity token in `/etc/credstore` (VM) or the keychain (mini); see `docs/RELAY-RUNBOOK.md` section 2.
 - Each relay has one doorman identity (`muse`, `claude_code`, `gemini_antigravity`, `hermes`) and gets only its own bot and app token from the doorman. Posting is bot-token-only.
 - Message text stays in Slack. The brain keeps pointer rows only (`aos.relay_pointers`), plus `aos.cao_relay_lease` and `aos.cao_heartbeat`.
 
